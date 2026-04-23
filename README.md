@@ -21,10 +21,7 @@ The Smart DevOps Assistant bridges the gap between human intent and machine exec
 
 | Name | Registration No |
 |------|----------------|
-| B.L.A.I. Maduwanthi | ITBIN-2211-0229 |
 | T.V.M. Weerasooriya | ITBIN-2211-0316 |
-| I.A. Dayananda | ITBIN-2211-0163 |
-| V.A.D.L. Karunarathna | ITBIN-2211-0203 |
 
 **Supervisor:** Isuru Samarappulige | **Co-supervisor:** Anuradha Ishani Yapa
 
