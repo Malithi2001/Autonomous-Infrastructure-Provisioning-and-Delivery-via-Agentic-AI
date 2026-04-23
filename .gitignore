@@ -1,0 +1,83 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Pytest
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.coveragerc
+
+# mypy
+.mypy_cache/
+.dmypy.json
+
+# ── Node.js / Frontend ────────────────────────────────────────────────────────
+node_modules/
+dist/
+.cache/
+.parcel-cache/
+
+# Vite
+frontend/dist/
+frontend/.vite/
+
+# ── Environment Files ─────────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+# (docker-compose.override.yml is gitignored — use for local overrides)
+docker-compose.override.yml
+
+# ── IDEs ─────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+*.pid
+
+# ── Database ──────────────────────────────────────────────────────────────────
+*.sqlite3
+*.db
+postgres_data/
+
+# ── Secrets / Keys ────────────────────────────────────────────────────────────
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
