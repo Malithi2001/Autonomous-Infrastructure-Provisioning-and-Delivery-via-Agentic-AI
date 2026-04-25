@@ -21,7 +21,9 @@ The Smart DevOps Assistant bridges the gap between human intent and machine exec
 
 | Name | Registration No |
 |------|----------------|
+
 | T.V.M. Weerasooriya | ITBIN-2211-0316 |
+
 
 **Supervisor:** Isuru Samarappulige | **Co-supervisor:** Anuradha Ishani Yapa
 

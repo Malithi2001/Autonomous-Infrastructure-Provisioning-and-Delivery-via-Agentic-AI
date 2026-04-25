@@ -1,0 +1,52 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── shadcn/ui CSS Variables (dark theme matching project palette) ─────────── */
+@layer base {
+  :root {
+    --background: 215 28% 7%;        /* surface-900 #0d1117 */
+    --foreground: 210 17% 82%;
+
+    --card: 215 25% 10%;             /* surface-800 #161b22 */
+    --card-foreground: 210 17% 82%;
+
+    --popover: 215 25% 10%;
+    --popover-foreground: 210 17% 82%;
+
+    --primary: 148 62% 39%;          /* primary-500 #25a461 */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 215 18% 16%;        /* surface-700 #21262d */
+    --secondary-foreground: 210 17% 82%;
+
+    --muted: 215 18% 19%;            /* surface-600 #30363d */
+    --muted-foreground: 215 10% 55%;
+
+    --accent: 215 18% 16%;
+    --accent-foreground: 210 17% 82%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 215 14% 22%;
+    --input: 215 14% 22%;
+    --ring: 148 62% 39%;
+
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-surface-900; }
+  ::-webkit-scrollbar-thumb { @apply bg-surface-500 rounded-full; }
+}
