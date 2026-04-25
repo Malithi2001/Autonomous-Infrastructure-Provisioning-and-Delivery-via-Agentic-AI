@@ -6,8 +6,9 @@ action planning, tool dispatch, and conversational memory.
 import asyncio
 from typing import AsyncGenerator, Optional
 
-from langchain.agents import AgentExecutor, create_openai_tools_agent
+from langchain.agents import AgentExecutor, create_openai_tools_agent, create_structured_chat_agent
 from langchain.memory import ConversationBufferWindowMemory
+from langchain_community.chat_models import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 
@@ -43,6 +44,37 @@ When planning an action, always respond in this structure:
 Current date/time: {current_datetime}
 """
 
+OLLAMA_SYSTEM_PROMPT = SYSTEM_PROMPT + """
+
+You have access to these tools:
+
+{tools}
+
+Use a JSON blob to specify one action at a time. Valid action values are
+"Final Answer" or one of: {tool_names}
+
+Use this exact format:
+
+Question: the user's question
+Thought: what to do next
+Action:
+```
+{{
+  "action": "tool_name",
+  "action_input": {{}}
+}}
+```
+Observation: tool result
+Thought: I know what to respond
+Action:
+```
+{{
+  "action": "Final Answer",
+  "action_input": "final response"
+}}
+```
+"""
+
 
 class DevOpsAgent:
     """Core LangChain agent for DevOps task execution."""
@@ -54,21 +86,38 @@ class DevOpsAgent:
 
     def _build_executor(self) -> AgentExecutor:
         """Build and return the LangChain AgentExecutor."""
-        llm = ChatOpenAI(
-            model=settings.DEFAULT_MODEL,
-            temperature=0,
-            streaming=True,
-            openai_api_key=settings.OPENAI_API_KEY,
-        )
+        provider = settings.DEFAULT_LLM_PROVIDER.lower()
+        if provider == "ollama":
+            llm = ChatOllama(
+                model=settings.DEFAULT_MODEL,
+                temperature=0,
+                base_url=settings.OLLAMA_BASE_URL,
+            )
+        elif provider == "openai":
+            llm = ChatOpenAI(
+                model=settings.DEFAULT_MODEL,
+                temperature=0,
+                streaming=True,
+                openai_api_key=settings.OPENAI_API_KEY,
+            )
+        else:
+            raise ValueError(f"Unsupported LLM provider: {settings.DEFAULT_LLM_PROVIDER}")
 
         tools = get_all_tools(user_role=self.user_role)
 
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", SYSTEM_PROMPT),
-            MessagesPlaceholder("chat_history", optional=True),
-            ("human", "{input}"),
-            MessagesPlaceholder("agent_scratchpad"),
-        ])
+        if provider == "ollama":
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", OLLAMA_SYSTEM_PROMPT),
+                MessagesPlaceholder("chat_history", optional=True),
+                ("human", "{input}\n\n{agent_scratchpad}"),
+            ])
+        else:
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", SYSTEM_PROMPT),
+                MessagesPlaceholder("chat_history", optional=True),
+                ("human", "{input}"),
+                MessagesPlaceholder("agent_scratchpad"),
+            ])
 
         memory = ConversationBufferWindowMemory(
             memory_key="chat_history",
@@ -76,7 +125,10 @@ class DevOpsAgent:
             k=20,  # Keep last 20 messages
         )
 
-        agent = create_openai_tools_agent(llm, tools, prompt)
+        if provider == "openai":
+            agent = create_openai_tools_agent(llm, tools, prompt)
+        else:
+            agent = create_structured_chat_agent(llm, tools, prompt, stop_sequence=False)
 
         return AgentExecutor(
             agent=agent,

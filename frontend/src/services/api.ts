@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { useAuthStore } from '@/store/authStore'
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
 
 export const api = axios.create({
   baseURL: `${BASE_URL}/api/v1`,
@@ -31,11 +31,11 @@ api.interceptors.response.use(
 
 export const authService = {
   login: async (username: string, password: string) => {
-    const form = new FormData()
-    form.append('username', username)
-    form.append('password', password)
+    const form = new URLSearchParams()
+    form.set('username', username)
+    form.set('password', password)
     const res = await api.post('/auth/login', form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     })
     return res.data
   },

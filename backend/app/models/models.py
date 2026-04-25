@@ -27,7 +27,11 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     executions = relationship("Execution", back_populates="user")
-    approvals = relationship("ApprovalRequest", back_populates="requested_by")
+    approvals = relationship(
+        "ApprovalRequest",
+        foreign_keys="ApprovalRequest.requested_by_id",
+        back_populates="requested_by",
+    )
 
 
 class Execution(Base):

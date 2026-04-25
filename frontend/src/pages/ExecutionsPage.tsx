@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { CheckCircle, XCircle, Clock, Loader } from 'lucide-react'
 import { executionService } from '@/services/api'
 import { formatDistanceToNow } from 'date-fns'
-import clsx from 'clsx'
 
 interface Execution {
   id: string

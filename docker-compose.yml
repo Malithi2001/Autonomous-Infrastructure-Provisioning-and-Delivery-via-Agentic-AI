@@ -55,7 +55,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-      target: production
     container_name: devops_assistant_backend
     restart: unless-stopped
     env_file:
@@ -85,7 +84,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-      target: production
     container_name: devops_assistant_worker
     restart: unless-stopped
     command: celery -A app.core.celery_app worker --loglevel=info --concurrency=4
@@ -108,7 +106,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-      target: production
     container_name: devops_assistant_flower
     restart: unless-stopped
     command: celery -A app.core.celery_app flower --port=5555 --url-prefix=flower
