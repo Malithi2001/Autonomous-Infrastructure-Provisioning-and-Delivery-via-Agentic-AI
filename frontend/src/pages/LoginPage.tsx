@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Bot, Eye, EyeOff } from 'lucide-react'
 import { authService } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
+import { getDefaultRouteForRole } from '@/lib/rbac'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -20,7 +21,7 @@ export default function LoginPage() {
     try {
       const data = await authService.login(username, password)
       login(data.access_token, { id: data.user_id, username: data.username, role: data.role })
-      navigate('/chat')
+      navigate(getDefaultRouteForRole(data.role))
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Login failed. Please try again.')
     } finally {

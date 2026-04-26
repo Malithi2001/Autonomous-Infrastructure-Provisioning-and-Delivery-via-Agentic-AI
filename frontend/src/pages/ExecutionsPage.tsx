@@ -5,11 +5,13 @@ import { formatDistanceToNow } from 'date-fns'
 
 interface Execution {
   id: string
-  command: string
+  requested_by: string
   status: string
-  risk_level: string
-  tool_used?: string
-  created_at: string
+  summary: string
+  details?: string | null
+  started_at: string
+  completed_at?: string | null
+  source?: string | null
 }
 
 const statusIcon = (status: string) => {
@@ -21,14 +23,13 @@ const statusIcon = (status: string) => {
   }
 }
 
-const riskBadge = (risk: string) => {
-  const cls = {
-    low:      'badge-success',
-    medium:   'badge-warning',
-    high:     'badge-error',
-    critical: 'bg-red-500/20 text-red-300 text-xs font-medium px-2 py-0.5 rounded-full',
-  }[risk] || 'badge-info'
-  return <span className={cls}>{risk}</span>
+const sourceBadge = (source?: string | null) => {
+  if (!source) return null
+  return (
+    <span className="bg-surface-700 text-primary-300 text-xs font-medium px-2 py-0.5 rounded-full">
+      {source}
+    </span>
+  )
 }
 
 export default function ExecutionsPage() {
@@ -63,13 +64,13 @@ export default function ExecutionsPage() {
               <div key={ex.id} className="card px-4 py-3 flex items-center gap-4 hover:border-surface-500 transition-colors">
                 <div className="shrink-0">{statusIcon(ex.status)}</div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-white truncate">{ex.command}</p>
+                  <p className="text-sm text-white truncate">{ex.summary}</p>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {ex.tool_used && <span className="font-mono text-primary-400 mr-2">{ex.tool_used}</span>}
-                    {formatDistanceToNow(new Date(ex.created_at), { addSuffix: true })}
+                    <span className="mr-2">By {ex.requested_by}</span>
+                    {formatDistanceToNow(new Date(ex.started_at), { addSuffix: true })}
                   </p>
                 </div>
-                <div className="shrink-0">{riskBadge(ex.risk_level)}</div>
+                <div className="shrink-0">{sourceBadge(ex.source)}</div>
               </div>
             ))}
           </div>

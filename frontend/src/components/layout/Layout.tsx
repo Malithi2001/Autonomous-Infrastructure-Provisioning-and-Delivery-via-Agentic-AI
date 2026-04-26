@@ -4,6 +4,7 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import clsx from 'clsx'
+import { canAccessChat } from '@/lib/rbac'
 
 const navItems = [
   { to: '/chat',       icon: Terminal,    label: 'Agent Chat' },
@@ -14,6 +15,12 @@ const navItems = [
 export default function Layout() {
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
+  const visibleNavItems = navItems.filter((item) => {
+    if (item.to === '/chat') {
+      return canAccessChat(user?.role)
+    }
+    return true
+  })
 
   const handleLogout = () => {
     logout()
@@ -39,7 +46,7 @@ export default function Layout() {
 
         {/* Nav */}
         <nav className="flex-1 px-3 py-4 space-y-1">
-          {navItems.map(({ to, icon: Icon, label }) => (
+          {visibleNavItems.map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}
               to={to}

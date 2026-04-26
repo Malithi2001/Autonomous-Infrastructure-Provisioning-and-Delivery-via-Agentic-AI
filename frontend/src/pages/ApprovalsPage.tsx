@@ -2,18 +2,24 @@ import { useEffect, useState } from 'react'
 import { CheckCircle, XCircle, Clock, AlertTriangle } from 'lucide-react'
 import { approvalService } from '@/services/api'
 import { formatDistanceToNow } from 'date-fns'
+import { useAuthStore } from '@/store/authStore'
+import { canDecideApprovals } from '@/lib/rbac'
 
 interface Approval {
   id: string
-  description: string
+  requested_by: string
+  action: string
+  risk_level: string
+  summary: string
   status: string
-  expires_at: string
   created_at: string
 }
 
 export default function ApprovalsPage() {
   const [approvals, setApprovals] = useState<Approval[]>([])
   const [loading, setLoading] = useState(true)
+  const userRole = useAuthStore((s) => s.user?.role)
+  const allowDecision = canDecideApprovals(userRole)
 
   const fetchApprovals = async () => {
     try {
@@ -58,19 +64,19 @@ export default function ApprovalsPage() {
                 <div className="flex items-start gap-3 mb-4">
                   <AlertTriangle size={18} className="text-yellow-400 mt-0.5 shrink-0" />
                   <div className="flex-1">
-                    <p className="text-sm text-white font-medium mb-1">{a.description}</p>
+                    <p className="text-sm text-white font-medium mb-1">{a.summary}</p>
                     <div className="flex items-center gap-3 text-xs text-gray-500">
                       <span className="flex items-center gap-1">
                         <Clock size={11} />
                         {formatDistanceToNow(new Date(a.created_at), { addSuffix: true })}
                       </span>
-                      <span className="text-yellow-600">
-                        Expires {formatDistanceToNow(new Date(a.expires_at), { addSuffix: true })}
-                      </span>
+                      <span>{a.action}</span>
+                      <span className="uppercase">{a.risk_level}</span>
+                      <span>By {a.requested_by}</span>
                     </div>
                   </div>
                 </div>
-                {a.status === 'pending' && (
+                {a.status === 'pending' && allowDecision && (
                   <div className="flex gap-3">
                     <button
                       onClick={() => decide(a.id, true)}
@@ -85,6 +91,9 @@ export default function ApprovalsPage() {
                       <XCircle size={14} /> Reject
                     </button>
                   </div>
+                )}
+                {a.status === 'pending' && !allowDecision && (
+                  <p className="text-xs text-gray-500">Read-only access for your role.</p>
                 )}
               </div>
             ))}

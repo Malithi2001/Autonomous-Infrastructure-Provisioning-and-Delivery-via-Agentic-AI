@@ -5,12 +5,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.routes import agent, auth, approvals, executions, health, webhooks
 from app.core.config import settings
 from app.core.database import init_db
 from app.core.logging import setup_logging
+from app.middleware.auth import JWTMiddleware
 
 setup_logging()
 
@@ -45,6 +45,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(JWTMiddleware)
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 
