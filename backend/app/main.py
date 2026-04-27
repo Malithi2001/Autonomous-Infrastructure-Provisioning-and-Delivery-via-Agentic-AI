@@ -54,3 +54,14 @@ app.include_router(agent.router, prefix="/api/v1/agent", tags=["Agent"])
 app.include_router(approvals.router, prefix="/api/v1/approvals", tags=["HITL Approvals"])
 app.include_router(executions.router, prefix="/api/v1/executions", tags=["Executions"])
 app.include_router(webhooks.router, prefix="/api/v1/webhooks", tags=["Webhooks"])
+
+# Backward-compatible aliases for the milestone contract.
+app.add_api_route("/api/agent/chat", agent.chat, methods=["POST"], tags=["Agent"])
+app.add_api_route(
+    "/api/agent/session/{session_id}",
+    agent.clear_session,
+    methods=["DELETE"],
+    status_code=204,
+    tags=["Agent"],
+)
+app.add_api_websocket_route("/ws/agent", agent.agent_ws)

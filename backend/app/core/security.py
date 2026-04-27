@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Optional
+import uuid
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -58,12 +59,28 @@ def verify_password(plain: str, hashed: str) -> bool:
 # ── JWT Utilities ─────────────────────────────────────────────────────────────
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (
-        expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode = _build_token_payload(
+        data,
+        expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+        token_type="access",
     )
-    to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    to_encode = _build_token_payload(
+        data,
+        expires_delta or timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+        token_type="refresh",
+    )
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def _build_token_payload(data: dict, expires_delta: timedelta, token_type: str) -> dict:
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + expires_delta
+    to_encode.update({"exp": expire, "type": token_type, "jti": str(uuid.uuid4())})
+    return to_encode
 
 
 def decode_token(token: str) -> dict:
@@ -89,3 +106,8 @@ def require_permission(permission: str):
             )
         return payload
     return _check
+
+
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
+    """Return the decoded JWT payload for the current caller."""
+    return decode_token(token)

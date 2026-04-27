@@ -3,11 +3,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import settings
+from app.core.logging import logger
 
-# Convert sync URL to async
-async_url = settings.DATABASE_URL.replace(
-    "postgresql://", "postgresql+asyncpg://"
-)
+def _build_async_url(database_url: str) -> str:
+    if database_url.startswith("postgresql://"):
+        return database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return database_url
+
+
+async_url = _build_async_url(settings.DATABASE_URL)
 
 engine = create_async_engine(async_url, echo=settings.DEBUG, future=True)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
@@ -20,8 +24,12 @@ class Base(DeclarativeBase):
 
 async def init_db() -> None:
     """Initialize database tables on startup."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        await ensure_default_admin()
+    except Exception as exc:
+        logger.warning("database.init.skipped", error=str(exc))
 
 
 async def get_db() -> AsyncSession:
@@ -35,3 +43,31 @@ async def get_db() -> AsyncSession:
             raise
         finally:
             await session.close()
+
+
+async def ensure_default_admin() -> None:
+    """Seed a default admin account when the database is empty."""
+    from sqlalchemy import select
+
+    from app.core.security import UserRole, hash_password
+    from app.models.models import User
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(User).where(User.username == settings.DEFAULT_ADMIN_USERNAME)
+        )
+        admin = result.scalar_one_or_none()
+        if admin:
+            return
+
+        session.add(
+            User(
+                email=settings.DEFAULT_ADMIN_EMAIL,
+                username=settings.DEFAULT_ADMIN_USERNAME,
+                hashed_password=hash_password(settings.DEFAULT_ADMIN_PASSWORD),
+                role=UserRole.ADMIN,
+                is_active=True,
+            )
+        )
+        await session.commit()
+        logger.info("database.default_admin.seeded", username=settings.DEFAULT_ADMIN_USERNAME)

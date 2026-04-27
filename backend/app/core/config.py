@@ -1,6 +1,8 @@
 """Application configuration using Pydantic Settings."""
 import json
 
+from pydantic import field_validator
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,15 +32,17 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000"
 
     # Database
-    DATABASE_URL: str = "postgresql://devops_user:devops_pass@localhost:5432/devops_assistant"
+    DATABASE_URL: str = "sqlite+aiosqlite:///./devops_assistant.db"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
+    MEMORY_BACKEND: str = "auto"
 
     # Auth
     SECRET_KEY: str = "change-this-in-production"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # LLM
     OPENAI_API_KEY: str = ""
@@ -65,6 +69,9 @@ class Settings(BaseSettings):
 
     # Logging
     LOG_LEVEL: str = "INFO"
+    DEFAULT_ADMIN_EMAIL: str = "admin@example.com"
+    DEFAULT_ADMIN_USERNAME: str = "admin"
+    DEFAULT_ADMIN_PASSWORD: str = "admin123"
 
     @property
     def allowed_origins(self) -> list[str]:
@@ -73,6 +80,17 @@ class Settings(BaseSettings):
             origins = json.loads(value)
             return [str(origin).strip() for origin in origins if str(origin).strip()]
         return [origin.strip() for origin in value.split(",") if origin.strip()]
+
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def parse_debug(cls, value):
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"release", "prod", "production", "false", "0", "off", "no"}:
+                return False
+            if normalized in {"debug", "dev", "development", "true", "1", "on", "yes"}:
+                return True
+        return value
 
 
 settings = Settings()
