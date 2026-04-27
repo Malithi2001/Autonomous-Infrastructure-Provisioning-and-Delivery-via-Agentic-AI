@@ -76,7 +76,7 @@ def list_recent_runs(repo_full_name: str, limit: int = 5) -> str:
         for run in list(runs)[:limit]:
             status_emoji = {"success": "✅", "failure": "❌", "cancelled": "⚠️"}.get(run.conclusion, "🔄")
             lines.append(
-                f"{status_emoji} #{run.run_number} [{run.status}] {run.name} — {run.head_branch} ({run.created_at.strftime('%Y-%m-%d %H:%M')})"
+                f"{status_emoji} #{run.run_number}[{run.status}] {run.name} — {run.head_branch} ({run.created_at.strftime('%Y-%m-%d %H:%M')})"
             )
         return "\n".join(lines) if lines else "No workflow runs found."
     except GithubException as e:

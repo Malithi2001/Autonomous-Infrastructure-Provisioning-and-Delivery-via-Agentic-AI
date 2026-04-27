@@ -72,7 +72,8 @@ def get_all_tools(user_role: str = "developer") -> list:
         StructuredTool.from_function(
             func=trigger_workflow,
             name="github_trigger_workflow",
-            description="Trigger a GitHub Actions workflow dispatch event. HIGH RISK: requires approval for production.",
+            description="Trigger a GitHub Actions workflow dispatch event. " \
+            "HIGH RISK: requires approval for production.",
         ),
         StructuredTool.from_function(
             func=start_container,
@@ -92,7 +93,8 @@ def get_all_tools(user_role: str = "developer") -> list:
         StructuredTool.from_function(
             func=execute_safe_shell_command,
             name="execute_shell_command",
-            description="Execute a safe, allowlisted shell command on the server. Only pre-approved commands are permitted.",
+            description="Execute a safe, allowlisted shell command on the server. " \
+            "Only pre-approved commands are permitted.",
         ),
     ]
 

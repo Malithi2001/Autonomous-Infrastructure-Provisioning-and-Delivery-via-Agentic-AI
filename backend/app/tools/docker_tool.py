@@ -33,7 +33,7 @@ def list_containers(all_containers: bool = False) -> str:
             ports = ", ".join(
                 f"{h[0]['HostPort']}->{p}" for p, h in (c.ports or {}).items() if h
             ) or "none"
-            rows.append(f"- [{c.status}] {c.name} (image: {c.image.tags[0] if c.image.tags else 'unknown'}, ports: {ports})")
+            rows.append(f"- [{c.status}] {c.name}(image: {c.image.tags[0] if c.image.tags else 'unknown'},ports: {ports})")
         return "\n".join(rows)
     except APIError as e:
         logger.error("docker.list_containers.error", error=str(e))

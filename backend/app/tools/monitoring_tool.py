@@ -19,7 +19,7 @@ def get_system_metrics() -> str:
             f"📊 System Metrics\n"
             f"  CPU Usage    : {cpu:.1f}%\n"
             f"  Memory       : {mem.percent:.1f}% used ({mem.used // 1024**2} MB / {mem.total // 1024**2} MB)\n"
-            f"  Disk         : {disk.percent:.1f}% used ({disk.used // 1024**3:.1f} GB / {disk.total // 1024**3:.1f} GB)\n"
+            f"  Disk         : {disk.percent:.1f}% used({disk.used // 1024**3:.1f} GB / {disk.total // 1024**3:.1f}GB)\n"
             f"  Network I/O  : ↑ {net.bytes_sent // 1024**2} MB sent | ↓ {net.bytes_recv // 1024**2} MB recv"
         )
     except Exception as e:

@@ -1,6 +1,6 @@
 """HITL Approval endpoints."""
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from app.core.security import require_permission
 from app.schemas.schemas import ApprovalDecision, ApprovalRequestOut
 
