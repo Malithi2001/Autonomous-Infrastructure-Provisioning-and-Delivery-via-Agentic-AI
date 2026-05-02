@@ -1,11 +1,16 @@
+"""
+Pydantic request/response schemas.
+"""
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.core.security import UserRole
 
+
+# ── Agent ─────────────────────────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000)
@@ -15,10 +20,12 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     output: str
     session_id: str
-    intermediate_steps: List[str] = Field(default_factory=list)
-    # Set when the agent queues a HITL approval instead of executing directly
-    pending_approval_id: Optional[str] = None
+    intermediate_steps: List[IntermediateStep] = Field(default_factory=list)
+    requires_approval: Optional[bool] = None
+    approval_id: Optional[str] = None 
 
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
 
 class RefreshRequest(BaseModel):
     refresh_token: str = Field(..., min_length=20)
@@ -40,6 +47,7 @@ class UserOut(BaseModel):
     role: UserRole
     is_active: bool
     created_at: datetime
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -50,38 +58,35 @@ class UserRegister(BaseModel):
     role: Optional[UserRole] = None
 
 
+# ── HITL Approvals ─────────────────────────────────────────────────────────────
+
 class ApprovalDecision(BaseModel):
     approved: bool
     note: Optional[str] = None
 
 
 class ApprovalRequestOut(BaseModel):
-    id: str
-    session_id: str
+    id: uuid.UUID
     requested_by: str
-    tool_name: str
     action: str
     risk_level: str
     summary: str
     status: str
-    decided_by: Optional[str] = None
-    decision_note: Optional[str] = None
-    decided_at: Optional[datetime] = None
-    expires_at: Optional[datetime] = None
     created_at: datetime
+
     model_config = ConfigDict(from_attributes=True)
 
 
+# ── Executions ────────────────────────────────────────────────────────────────
+
 class ExecutionOut(BaseModel):
-    id: str
-    session_id: str
+    id: uuid.UUID
     requested_by: str
-    tool_name: str
     status: str
     summary: str
     details: Optional[str] = None
-    source: Optional[str] = None
     started_at: datetime
     completed_at: Optional[datetime] = None
-    approval_id: Optional[str] = None
+    source: Optional[str] = None
+
     model_config = ConfigDict(from_attributes=True)

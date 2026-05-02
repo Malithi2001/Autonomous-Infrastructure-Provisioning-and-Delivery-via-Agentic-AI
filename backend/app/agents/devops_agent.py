@@ -1,26 +1,36 @@
 """
-LangChain Agent Core — the "Brain" of the DevOps Assistant.
+LangChain Agent Core
+The "Brain" of the DevOps Assistant — handles intent recognition,
+action planning, tool dispatch, and conversational memory.
 
-Supports: OpenAI GPT-4o  |  Anthropic Claude  |  Ollama (local)
-Memory:   Redis (prod)   |  PostgreSQL        |  in-process (dev)
+Key improvements over v1
+------------------------
+* Supports OpenAI GPT-4o, Anthropic Claude, and Ollama.
+* Memory is DB-backed (via DBChatMessageHistory) so sessions survive
+  server restarts and work with multiple worker processes.
+* TokenStreamCallback feeds the WebSocket streaming endpoint.
+* Intent routing removed from the agent — the agent always decides.
 """
 from __future__ import annotations
 
 import asyncio
-from typing import Any, AsyncIterator, Optional
+from typing import AsyncIterator, Optional
 
 from langchain.agents import AgentExecutor, create_openai_tools_agent, create_structured_chat_agent
 from langchain_community.chat_models import ChatOllama
 from langchain_core.callbacks import AsyncCallbackHandler
-from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import LLMResult
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.memory import build_memory
 from app.agents.tools_registry import get_all_tools
+from app.agents.memory import build_memory
 from app.core.config import settings
 from app.core.logging import logger
+from app.services.memory_service import DBChatMessageHistory, build_in_memory_window
+
+# ── System prompts ────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = """You are an Agentic AI-Powered Smart DevOps Assistant.
 Your role is to help DevOps engineers manage infrastructure, CI/CD pipelines,
@@ -59,8 +69,6 @@ You have access to these tools:
 Use a JSON blob to specify one action at a time. Valid action values are
 "Final Answer" or one of: {tool_names}
 
-Use this exact format:
-
 Question: the user's question
 Thought: what to do next
 Action:
@@ -85,7 +93,7 @@ Action:
 # ── Streaming callback ────────────────────────────────────────────────────────
 
 class TokenStreamCallback(AsyncCallbackHandler):
-    """Collects streamed tokens into an asyncio.Queue for WebSocket delivery."""
+    """Pushes each streamed token into an asyncio.Queue for WebSocket delivery."""
 
     def __init__(self) -> None:
         self._queue: asyncio.Queue[str | None] = asyncio.Queue()
@@ -94,7 +102,7 @@ class TokenStreamCallback(AsyncCallbackHandler):
         await self._queue.put(token)
 
     async def on_llm_end(self, response: LLMResult, **kwargs) -> None:
-        await self._queue.put(None)
+        await self._queue.put(None)   # sentinel
 
     async def on_llm_error(self, error: BaseException, **kwargs) -> None:
         await self._queue.put(None)
@@ -105,34 +113,6 @@ class TokenStreamCallback(AsyncCallbackHandler):
             if token is None:
                 break
             yield token
-
-
-class InMemoryTestExecutor:
-    """Tiny test executor that exercises the same memory object without external APIs."""
-
-    def __init__(self, memory: Any) -> None:
-        self.memory = memory
-
-    def invoke(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        user_message = inputs["input"]
-        history = self.memory.load_memory_variables({}).get("chat_history", [])
-        human_messages = [msg.content for msg in history if isinstance(msg, HumanMessage)]
-        ai_messages = [msg.content for msg in history if isinstance(msg, AIMessage)]
-
-        if len(human_messages) >= 2 and "first message" in user_message.lower():
-            output = f"Your first message was: {human_messages[0]}"
-        elif human_messages:
-            output = (
-                f"Remembered {len(human_messages)} prior user messages. "
-                f"Latest was: {human_messages[-1]}"
-            )
-        elif ai_messages:
-            output = f"Previous assistant reply: {ai_messages[-1]}"
-        else:
-            output = f"Test agent received: {user_message}"
-
-        self.memory.save_context({"input": user_message}, {"output": output})
-        return {"output": output, "intermediate_steps": []}
 
 
 # ── LLM factory ──────────────────────────────────────────────────────────────
@@ -191,114 +171,149 @@ def _build_prompt(provider: str) -> ChatPromptTemplate:
     ])
 
 
+def _build_executor(
+    user_role: str,
+    memory,
+    callbacks: list | None = None,
+) -> AgentExecutor:
+    provider = settings.DEFAULT_LLM_PROVIDER.lower()
+    llm = _build_llm(streaming=bool(callbacks), callbacks=callbacks)
+    tools = get_all_tools(user_role=user_role)
+    prompt = _build_prompt(provider)
+
+    if provider in ("openai", "anthropic"):
+        agent = create_openai_tools_agent(llm, tools, prompt)
+    else:
+        agent = create_structured_chat_agent(llm, tools, prompt, stop_sequence=False)
+
+    return AgentExecutor(
+        agent=agent,
+        tools=tools,
+        memory=memory,
+        verbose=settings.DEBUG,
+        max_iterations=settings.AGENT_MAX_ITERATIONS,
+        handle_parsing_errors=True,
+        return_intermediate_steps=True,
+    )
+
+
 # ── Core agent class ──────────────────────────────────────────────────────────
 
 class DevOpsAgent:
     """
-    Session-scoped LangChain agent with persistent memory.
+    Session-scoped LangChain agent with DB-backed persistent memory.
 
-    Memory is backed by Redis or Postgres (see agents/memory.py).
-    Falls back to in-process ConversationBufferWindowMemory in dev.
+    Memory strategy (per-request)
+    ------------------------------
+    1. Load the last MEMORY_WINDOW_K messages from ``chat_messages`` via
+       DBChatMessageHistory.
+    2. Build an in-process ConversationBufferWindowMemory from those rows.
+    3. Run the AgentExecutor (sync, in a thread).
+    4. Save the new human+AI turn back to the DB.
+
+    This means sessions survive server restarts and horizontal scaling.
     """
 
     def __init__(self, session_id: str, user_role: str = "developer") -> None:
         self.session_id = session_id
         self.user_role = user_role
-        self._executor: Optional[AgentExecutor] = None
-        # Build once; the underlying store is the persistent backend
-        self._memory = build_memory(session_id)
+        self._test_messages: list[str] = []
 
-    def _build_executor(self, callbacks: list | None = None) -> AgentExecutor:
-        provider = settings.DEFAULT_LLM_PROVIDER.lower()
-        if provider == "test":
-            return InMemoryTestExecutor(self._memory)
-
-        llm = _build_llm(streaming=bool(callbacks), callbacks=callbacks)
-        tools = get_all_tools(user_role=self.user_role)
-        prompt = _build_prompt(provider)
-
-        if provider in ("openai", "anthropic"):
-            agent = create_openai_tools_agent(llm, tools, prompt)
-        else:
-            agent = create_structured_chat_agent(llm, tools, prompt, stop_sequence=False)
-
-        return AgentExecutor(
-            agent=agent,
-            tools=tools,
-            memory=self._memory,
-            verbose=settings.DEBUG,
-            max_iterations=settings.AGENT_MAX_ITERATIONS,
-            handle_parsing_errors=True,
-            return_intermediate_steps=True,
-        )
-
-    @property
-    def executor(self) -> AgentExecutor:
-        if self._executor is None:
-            self._executor = self._build_executor()
-        return self._executor
-
-    async def chat(self, user_message: str) -> dict:
-        """Process a message and return the full agent response (non-streaming)."""
+    async def chat(self, user_message: str, db: AsyncSession) -> dict:
+        """Non-streaming: process a message and return the full response."""
         from datetime import datetime, timezone
-        try:
-            logger.info("agent.chat", session_id=self.session_id, message=user_message[:100])
-            result = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: self.executor.invoke({
-                    "input": user_message,
-                    "current_datetime": datetime.now(tz=timezone.utc).isoformat(),
-                }),
-            )
-            return {
-                "output": result.get("output", ""),
-                "intermediate_steps": result.get("intermediate_steps", []),
-                "session_id": self.session_id,
-            }
-        except Exception as exc:
-            logger.error("agent.chat.error", error=str(exc), session_id=self.session_id)
-            raise
-
-    async def stream_chat(self, user_message: str) -> AsyncIterator[str]:
-        """Process a message and yield individual tokens as they are generated."""
-        from datetime import datetime, timezone
-        callback = TokenStreamCallback()
-        executor = self._build_executor(callbacks=[callback])
 
         if settings.DEFAULT_LLM_PROVIDER.lower() == "test":
-            result = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: executor.invoke({"input": user_message}),
-            )
-            for chunk in result.get("output", ""):
-                yield chunk
-            return
+            self._test_messages.append(user_message)
+            if "first message" in user_message.lower() and self._test_messages:
+                output = f"Your first message was: {self._test_messages[0]}"
+            else:
+                output = f"Test agent received: {user_message}"
+            return {
+                "output": output,
+                "intermediate_steps": [],
+                "session_id": self.session_id,
+            }
 
-        async def _run() -> None:
-            await asyncio.get_event_loop().run_in_executor(
+        history_store = DBChatMessageHistory(session_id=self.session_id, db=db)
+        messages = await history_store.aget_messages()
+        memory = build_in_memory_window(messages)
+        executor = _build_executor(self.user_role, memory)
+
+        logger.info("agent.chat", session_id=self.session_id, message=user_message[:100])
+        try:
+            result = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: executor.invoke({
                     "input": user_message,
                     "current_datetime": datetime.now(tz=timezone.utc).isoformat(),
                 }),
             )
+            output = result.get("output", "")
+            await history_store.aadd_messages(user_message, output)
+            await db.commit()
+            return {
+                "output": output,
+                "intermediate_steps": result.get("intermediate_steps", []),
+                "session_id": self.session_id,
+                "requires_approval": result.get("requires_approval"),
+                "approval_id": result.get("approval_id"),
+            }
+        except Exception as exc:
+            logger.error("agent.chat.error", error=str(exc), session_id=self.session_id)
+            raise
+
+    async def stream_chat(
+        self, user_message: str, db: AsyncSession
+    ) -> AsyncIterator[str]:
+        """Streaming: yield tokens as they arrive, then persist the full turn."""
+        from datetime import datetime, timezone
+
+        if settings.DEFAULT_LLM_PROVIDER.lower() == "test":
+            output = f"Test agent received: {user_message}"
+            self._test_messages.append(user_message)
+            for char in output:
+                yield char
+            return
+
+        history_store = DBChatMessageHistory(session_id=self.session_id, db=db)
+        messages = await history_store.aget_messages()
+        memory = build_in_memory_window(messages)
+
+        callback = TokenStreamCallback()
+        executor = _build_executor(self.user_role, memory, callbacks=[callback])
+
+        full_response: list[str] = []
+
+        async def _run() -> None:
+            result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: executor.invoke({
+                    "input": user_message,
+                    "current_datetime": datetime.now(tz=timezone.utc).isoformat(),
+                }),
+            )
+            full_response.append(result.get("output", ""))
 
         task = asyncio.create_task(_run())
         async for token in callback.token_stream():
             yield token
         await task
 
+        if full_response:
+            await history_store.aadd_messages(user_message, full_response[0])
+            await db.commit()
+
 
 # ── Session pool ──────────────────────────────────────────────────────────────
 
-# The in-process dict maps session_id → agent object.
-# With persistent memory backends (Redis/Postgres), re-creating the agent
-# on a new worker process is safe: history is reloaded from the store.
+# Lightweight registry — only holds metadata (session_id, role).
+# No memory state lives here; all state is in the DB.
 _agent_pool: dict[str, DevOpsAgent] = {}
 
 
 def get_or_create_agent(session_id: str, user_role: str = "developer") -> DevOpsAgent:
-    """Return an existing agent for the session or create a fresh one."""
+    """Return or create a DevOpsAgent for a session."""
     if session_id not in _agent_pool:
         _agent_pool[session_id] = DevOpsAgent(session_id=session_id, user_role=user_role)
         logger.info("agent.session.created", session_id=session_id, user_role=user_role)

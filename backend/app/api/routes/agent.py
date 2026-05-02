@@ -6,11 +6,15 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.devops_agent import _agent_pool, get_or_create_agent
 from app.core.config import settings
+from app.core.database import AsyncSessionLocal, get_db
 from app.core.security import decode_token, require_permission
 from app.schemas.schemas import ChatRequest, ChatResponse
+from app.services.execution_service import complete_execution, create_execution
+from app.services.memory_service import DBChatMessageHistory
 
 router = APIRouter()
 
@@ -55,20 +59,47 @@ def _raise_provider_errors(exc: Exception) -> None:
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
+    db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_permission("agent:chat")),
 ):
     """Send a message to the LangChain agent and return its response."""
     session_id = request.session_id or str(uuid.uuid4())
     user_role = current_user.get("role", "developer")
+    execution = None
 
     try:
+        if settings.DEFAULT_LLM_PROVIDER.lower() != "test" or settings.MEMORY_BACKEND != "inmemory":
+            execution = await create_execution(
+                db,
+                requested_by=current_user.get("username", current_user.get("sub", "unknown")),
+                summary=request.message,
+                source="agent",
+            )
+            # Do not hold a SQLite write lock while the agent/LLM is running.
+            await db.commit()
         agent = get_or_create_agent(session_id=session_id, user_role=user_role)
-        result = await agent.chat(request.message)
+        result = await agent.chat(request.message, db=db)
+        if execution:
+            await complete_execution(
+                db,
+                execution=execution,
+                output=result["output"],
+                intermediate_steps=result.get("intermediate_steps", []),
+            )
         return ChatResponse(
-            output=result["output"],
-            session_id=result["session_id"],
-            intermediate_steps=[str(step) for step in result.get("intermediate_steps", [])],
-        )
+    output=result["output"],
+    session_id=result["session_id"],
+    intermediate_steps=[
+        {
+            "tool": step[0].tool if hasattr(step[0], "tool") else str(step[0]),
+            "input": step[0].tool_input if hasattr(step[0], "tool_input") else "",
+            "output": str(step[1]),
+        }
+        for step in result.get("intermediate_steps", [])
+    ],
+    requires_approval=result.get("requires_approval"),
+    approval_id=result.get("approval_id"),
+)
     except HTTPException:
         raise
     except Exception as exc:
@@ -78,10 +109,14 @@ async def chat(
 @router.delete("/session/{session_id}", status_code=204)
 async def clear_session(
     session_id: str,
+    db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_permission("agent:chat")),
 ):
-    """Clear the in-process agent instance for a session."""
+    """Clear the in-process agent instance and persisted history for a session."""
     _agent_pool.pop(session_id, None)
+    history = DBChatMessageHistory(session_id=session_id, db=db)
+    await history.aclear()
+    await db.commit()
     return None
 
 
@@ -133,8 +168,10 @@ async def agent_ws(
 
             agent = get_or_create_agent(session_id=ws_session_id, user_role=user_role)
             try:
-                async for token_chunk in agent.stream_chat(message):
-                    await websocket.send_text(token_chunk)
+                async with AsyncSessionLocal() as db:
+                    async for token_chunk in agent.stream_chat(message, db=db):
+                        await websocket.send_text(token_chunk)
+                    await db.commit()
                 await websocket.send_json({"event": "done", "session_id": ws_session_id})
             except Exception as exc:
                 await websocket.send_json({"event": "error", "detail": str(exc)})

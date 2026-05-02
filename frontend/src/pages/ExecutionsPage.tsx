@@ -5,30 +5,41 @@ import { formatDistanceToNow } from 'date-fns'
 
 interface Execution {
   id: string
-  command: string
+  requested_by: string
   status: string
-  risk_level: string
-  tool_used?: string
-  created_at: string
+  summary: string
+  details?: string
+  source?: string
+  started_at?: string
+  completed_at?: string
 }
 
 const statusIcon = (status: string) => {
   switch (status) {
-    case 'success': return <CheckCircle size={14} className="text-primary-400" />
+    case 'success':
+    case 'completed': return <CheckCircle size={14} className="text-primary-400" />
     case 'failed':  return <XCircle size={14} className="text-red-400" />
     case 'running': return <Loader size={14} className="text-blue-400 animate-spin" />
     default:        return <Clock size={14} className="text-gray-500" />
   }
 }
 
-const riskBadge = (risk: string) => {
+const statusBadge = (status: string) => {
   const cls = {
-    low:      'badge-success',
-    medium:   'badge-warning',
-    high:     'badge-error',
-    critical: 'bg-red-500/20 text-red-300 text-xs font-medium px-2 py-0.5 rounded-full',
-  }[risk] || 'badge-info'
-  return <span className={cls}>{risk}</span>
+    completed: 'badge-success',
+    success:   'badge-success',
+    running:   'badge-info',
+    failed:    'badge-error',
+    cancelled: 'badge-warning',
+  }[status] || 'badge-info'
+  return <span className={cls}>{status}</span>
+}
+
+const relativeTime = (value?: string) => {
+  if (!value) return 'time unknown'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'time unknown'
+  return formatDistanceToNow(date, { addSuffix: true })
 }
 
 export default function ExecutionsPage() {
@@ -63,13 +74,13 @@ export default function ExecutionsPage() {
               <div key={ex.id} className="card px-4 py-3 flex items-center gap-4 hover:border-surface-500 transition-colors">
                 <div className="shrink-0">{statusIcon(ex.status)}</div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-white truncate">{ex.command}</p>
+                  <p className="text-sm text-white truncate">{ex.summary}</p>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {ex.tool_used && <span className="font-mono text-primary-400 mr-2">{ex.tool_used}</span>}
-                    {formatDistanceToNow(new Date(ex.created_at), { addSuffix: true })}
+                    {ex.source && <span className="font-mono text-primary-400 mr-2">{ex.source}</span>}
+                    {relativeTime(ex.started_at)}
                   </p>
                 </div>
-                <div className="shrink-0">{riskBadge(ex.risk_level)}</div>
+                <div className="shrink-0">{statusBadge(ex.status)}</div>
               </div>
             ))}
           </div>

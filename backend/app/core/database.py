@@ -12,8 +12,14 @@ def _build_async_url(database_url: str) -> str:
 
 
 async_url = _build_async_url(settings.DATABASE_URL)
+connect_args = {"timeout": 30} if async_url.startswith("sqlite") else {}
 
-engine = create_async_engine(async_url, echo=settings.DEBUG, future=True)
+engine = create_async_engine(
+    async_url,
+    echo=settings.DEBUG,
+    future=True,
+    connect_args=connect_args,
+)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 
@@ -28,7 +34,7 @@ async def init_db() -> None:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         await ensure_default_admin()
-    except Exception as exc:
+    except Exception as exc: 
         logger.warning("database.init.skipped", error=str(exc))
 
 
