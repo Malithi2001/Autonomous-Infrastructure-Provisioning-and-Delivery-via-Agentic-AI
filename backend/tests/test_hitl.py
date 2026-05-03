@@ -27,7 +27,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.api.routes import approvals as approvals_router, health
 from app.core.database import Base, get_db
 from app.core.security import UserRole, create_access_token, hash_password
-from app.middleware.auth import JWTMiddleware
 from app.models.models import ApprovalRequest, Execution, User
 
 
@@ -41,7 +40,6 @@ TestSession = async_sessionmaker(test_engine, expire_on_commit=False)
 def _build_approvals_app() -> FastAPI:
     _app = FastAPI(title="HITL Test App")
     _app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-    _app.add_middleware(JWTMiddleware)
     _app.include_router(health.router)
     _app.include_router(approvals_router.router, prefix="/api/v1/approvals", tags=["Approvals"])
     return _app

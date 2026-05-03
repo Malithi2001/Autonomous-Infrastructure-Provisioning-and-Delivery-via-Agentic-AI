@@ -47,9 +47,9 @@ def _hitl_wrap(func, tool_name: str, risk_level: str, summary_template: str):
     """
     Wrap a tool function to raise HITLApprovalRequired when HITL is enabled.
     """
-    from app.core.config import settings
-
     def _wrapped(**kwargs):
+        from app.core.config import settings
+
         if settings.ENABLE_HITL:
             summary = summary_template.format(**kwargs)
             raise HITLApprovalRequired(
