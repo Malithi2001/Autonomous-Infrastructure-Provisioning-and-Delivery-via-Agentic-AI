@@ -1,47 +1,101 @@
 import axios from 'axios'
-import { useAuthStore } from '@/store/authStore'
+import type { RoleProfile, User, UserRole } from '@/types'
+import { normalizeRole } from '@/lib/rbac'
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+export const API_BASE_URL = BASE_URL.replace(/\/$/, '')
 
 export const api = axios.create({
-  baseURL: `${BASE_URL}/api/v1`,
+  baseURL: `${API_BASE_URL}/api/v1`,
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,
 })
 
-// Attach JWT token to every request
-api.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().token
-  if (token) config.headers.Authorization = `Bearer ${token}`
-  return config
-})
-
-// Auto-logout on 401
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) {
-      useAuthStore.getState().logout()
-      window.location.href = '/login'
+    const status = err.response?.status
+    const url = err.config?.url || ''
+    const isAuthProbe =
+      url.includes('/auth/me') ||
+      url.includes('/auth/login') ||
+      url.includes('/auth/logout') ||
+      url.includes('/auth/register') ||
+      url.includes('/auth/roles')
+    if (status === 401 && !isAuthProbe) {
+      window.dispatchEvent(new CustomEvent('devops-auth:unauthorized'))
     }
     return Promise.reject(err)
-  }
+  },
 )
 
-// ── Auth ─────────────────────────────────────────────────────────────────────
-
-export const authService = {
-  login: async (username: string, password: string) => {
-    const form = new URLSearchParams()
-    form.set('username', username)
-    form.set('password', password)
-    const res = await api.post('/auth/login', form, {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    })
-    return res.data
-  },
+export interface LoginResponse {
+  user?: User
+  user_id?: string
+  username?: string
+  role?: string
+  email?: string
+  id?: string
+  is_active?: boolean
+  created_at?: string
 }
 
-// ── Agent ─────────────────────────────────────────────────────────────────────
+export interface RegisterRequest {
+  email: string
+  username: string
+  password: string
+  role: Extract<UserRole, 'developer' | 'viewer'>
+}
+
+export interface AdminCreateUserRequest {
+  email: string
+  username: string
+  password: string
+  role: UserRole
+  is_active?: boolean
+}
+
+function normalizeUser(data: LoginResponse | User): User {
+  if ('user' in data && data.user) return { ...data.user, role: normalizeRole(data.user.role) }
+  return {
+    id: data.id || ('user_id' in data && data.user_id ? data.user_id : ''),
+    email: data.email,
+    username: data.username || '',
+    role: normalizeRole(data.role),
+    is_active: data.is_active,
+    created_at: data.created_at,
+  }
+}
+
+export const authService = {
+  login: async (email: string, password: string): Promise<User> => {
+    const res = await api.post<LoginResponse>('/auth/login', { email, password })
+    return normalizeUser(res.data)
+  },
+  register: async ({ email, username, password, role }: RegisterRequest): Promise<User> => {
+    const res = await api.post<LoginResponse>('/auth/register', { email, username, password, role })
+    return normalizeUser(res.data)
+  },
+  me: async (): Promise<User> => {
+    const res = await api.get<User>('/auth/me')
+    return normalizeUser(res.data)
+  },
+  logout: async (): Promise<void> => {
+    await api.post('/auth/logout')
+  },
+  roles: async (): Promise<RoleProfile[]> => {
+    const res = await api.get<{ roles: RoleProfile[] }>('/auth/roles')
+    return res.data.roles
+  },
+  listUsers: async (): Promise<User[]> => {
+    const res = await api.get<User[]>('/auth/users')
+    return res.data.map(normalizeUser)
+  },
+  createUser: async (payload: AdminCreateUserRequest): Promise<User> => {
+    const res = await api.post<User>('/auth/users', payload)
+    return normalizeUser(res.data)
+  },
+}
 
 export const agentService = {
   chat: async (message: string, sessionId?: string) => {
@@ -53,8 +107,6 @@ export const agentService = {
   },
 }
 
-// ── Approvals ─────────────────────────────────────────────────────────────────
-
 export const approvalService = {
   list: async () => {
     const res = await api.get('/approvals')
@@ -65,8 +117,6 @@ export const approvalService = {
     return res.data
   },
 }
-
-// ── Executions ────────────────────────────────────────────────────────────────
 
 export const executionService = {
   list: async (limit = 50) => {

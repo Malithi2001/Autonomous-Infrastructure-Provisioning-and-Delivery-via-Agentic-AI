@@ -14,7 +14,7 @@ Key improvements over v1
 from __future__ import annotations
 
 import asyncio
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator
 
 from langchain.agents import AgentExecutor, create_openai_tools_agent, create_structured_chat_agent
 from langchain_community.chat_models import ChatOllama
@@ -24,8 +24,8 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.memory import build_memory  # noqa: F401 - re-exported for tests and extension hooks
 from app.agents.tools_registry import get_all_tools
-from app.agents.memory import build_memory
 from app.core.config import settings
 from app.core.logging import logger
 from app.services.memory_service import DBChatMessageHistory, build_in_memory_window
@@ -134,7 +134,7 @@ def _build_llm(streaming: bool = False, callbacks: list | None = None):
             streaming=streaming,
             anthropic_api_key=settings.ANTHROPIC_API_KEY,
             callbacks=cb,
-        )
+        )  # type: ignore[call-arg]
 
     if provider == "openai":
         return ChatOpenAI(
@@ -143,7 +143,7 @@ def _build_llm(streaming: bool = False, callbacks: list | None = None):
             streaming=streaming,
             openai_api_key=settings.OPENAI_API_KEY,
             callbacks=cb,
-        )
+        )  # type: ignore[call-arg]
 
     if provider == "ollama":
         return ChatOllama(

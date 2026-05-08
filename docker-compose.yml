@@ -6,7 +6,7 @@ version: "3.9"
 # ============================================================
 
 x-backend-env: &backend-env
-  DATABASE_URL: postgresql://${POSTGRES_USER:-devops_user}:${POSTGRES_PASSWORD:-devops_pass}@db:5432/${POSTGRES_DB:-devops_assistant}
+  DATABASE_URL: ${DATABASE_URL:-postgresql://devops_user:devops_pass@db:5432/devops_assistant}
   REDIS_URL: redis://redis:6379/0
 
 services:

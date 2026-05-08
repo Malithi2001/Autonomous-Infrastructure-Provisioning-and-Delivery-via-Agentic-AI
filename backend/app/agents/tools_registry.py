@@ -92,67 +92,80 @@ _trigger_workflow_hitl = _hitl_wrap(
 # ── Tool registry ─────────────────────────────────────────────────────────────
 
 def get_all_tools(user_role: str = "developer") -> list:
-    """Return tools available to the given user role."""
+    """Return tools available to the given user role.
 
-    base_tools = [
+    Viewer accounts receive read-only tools. Developers receive read-only tools
+    plus lower-risk development/staging remediation. Operators and admins get
+    elevated tools, with high/critical operations still gated by HITL.
+    """
+    normalized_role = (user_role or "viewer").lower()
+
+    read_only_tools = [
         # Docker — read-only
         StructuredTool.from_function(
             func=list_containers,
             name="docker_list_containers",
-            description="List all running Docker containers with their status, ports, and names.",
+            description="List running Docker containers with status, ports, and names. Read-only.",
         ),
         StructuredTool.from_function(
             func=get_container_logs,
             name="docker_get_logs",
-            description="Retrieve logs from a Docker container. Provide container_name and optional tail_lines.",
-        ),
-        # Docker — medium risk (self-healing)
-        StructuredTool.from_function(
-            func=restart_container,
-            name="docker_restart_container",
-            description="Restart a Docker container by name. Use for self-healing when a service crashes.",
+            description=(
+                "Retrieve logs from a Docker container. Provide container_name and optional tail_lines. Read-only."
+            ),
         ),
         # GitHub — read-only
         StructuredTool.from_function(
             func=list_workflows,
             name="github_list_workflows",
-            description="List all GitHub Actions workflows in a repository.",
+            description="List GitHub Actions workflows in a repository. Read-only.",
         ),
         StructuredTool.from_function(
             func=get_workflow_run_status,
             name="github_workflow_status",
-            description="Get the status of a specific GitHub Actions workflow run by run_id.",
+            description="Get the status of a specific GitHub Actions workflow run by run_id. Read-only.",
         ),
         StructuredTool.from_function(
             func=list_recent_runs,
             name="github_recent_runs",
-            description="Get the most recent workflow runs with their status and conclusions.",
+            description="Get the most recent workflow runs with their status and conclusions. Read-only.",
         ),
         StructuredTool.from_function(
             func=get_repo_info,
             name="github_repo_info",
-            description="Get metadata about a GitHub repository (stars, issues, default branch, etc.).",
+            description="Get metadata about a GitHub repository. Read-only.",
         ),
-        # Monitoring
+        # Monitoring — read-only
         StructuredTool.from_function(
             func=get_system_metrics,
             name="get_system_metrics",
-            description="Get current system metrics: CPU, memory, disk, load average, and network I/O.",
+            description="Get current system metrics: CPU, memory, disk, load average, and network I/O. Read-only.",
         ),
         StructuredTool.from_function(
             func=get_service_health,
             name="get_service_health",
-            description="Check the health status of a service by HTTP URL. Returns status code and response time.",
+            description="Check the health status of a service by HTTP URL. Read-only.",
         ),
         StructuredTool.from_function(
             func=get_process_list,
             name="get_process_list",
-            description="List top processes sorted by cpu or memory usage. Args: sort_by ('cpu'|'memory'), limit (int).",
+            description="List top processes sorted by cpu or memory usage. Read-only.",
         ),
         StructuredTool.from_function(
             func=check_multiple_services,
             name="check_multiple_services",
-            description="Health-check multiple service URLs in parallel. Provide a list of HTTP/HTTPS URLs.",
+            description="Health-check multiple service URLs in parallel. Read-only.",
+        ),
+    ]
+
+    developer_tools = [
+        StructuredTool.from_function(
+            func=restart_container,
+            name="docker_restart_container",
+            description=(
+                "Restart a Docker container by name for development/staging self-healing. "
+                "Do not use for production workloads without escalation."
+            ),
         ),
     ]
 
@@ -197,7 +210,10 @@ def get_all_tools(user_role: str = "developer") -> list:
         ),
     ]
 
-    if user_role in ("operator", "admin"):
-        return base_tools + elevated_tools
-
-    return base_tools
+    if normalized_role == "viewer":
+        return read_only_tools
+    if normalized_role == "developer":
+        return read_only_tools + developer_tools
+    if normalized_role in ("operator", "admin"):
+        return read_only_tools + developer_tools + elevated_tools
+    return read_only_tools

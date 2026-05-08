@@ -18,8 +18,8 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, update
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -83,7 +83,7 @@ async def create_approval_request(
 async def list_pending_approvals(
     status_filter: Optional[str] = "pending",
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("logs:read")),
+    current_user: dict = Depends(require_permission("approvals:read")),
 ):
     """List approval requests (default: pending only)."""
     stmt = select(ApprovalRequest).order_by(ApprovalRequest.created_at.desc())
@@ -97,7 +97,7 @@ async def list_pending_approvals(
 async def get_approval(
     approval_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("logs:read")),
+    current_user: dict = Depends(require_permission("approvals:read")),
 ):
     """Fetch a single approval request by ID."""
     record = await db.get(ApprovalRequest, str(approval_id))
@@ -111,7 +111,7 @@ async def decide_approval(
     approval_id: UUID,
     decision: ApprovalDecision,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("deployments:production")),
+    current_user: dict = Depends(require_permission("approvals:decide")),
 ):
     """
     Approve or reject a pending HITL approval request.
@@ -148,8 +148,8 @@ async def decide_approval(
 
     if decision.approved:
         # ── Execute the tool ──────────────────────────────────────────────────
-        tool_input = json.loads(record.tool_input)
-        exec_details, exec_status = _dispatch_tool(record.tool_name, tool_input)
+        tool_input = json.loads(record.tool_input or "{}")
+        exec_details, exec_status = _dispatch_tool(record.tool_name or "", tool_input)
 
         record.status = "approved"
         record.decided_by = decider
