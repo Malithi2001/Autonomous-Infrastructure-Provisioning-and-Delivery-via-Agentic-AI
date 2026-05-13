@@ -118,6 +118,25 @@ cp frontend/.env.example frontend/.env
 nano backend/.env
 ```
 
+
+### Supabase database setup
+
+This project can use Supabase Postgres through the shared/session pooler. Create `backend/.env` from the example file and set `DATABASE_URL` to your Supabase connection string:
+
+```bash
+DATABASE_URL=postgresql://postgres.aoklczjhgzswhapdwaoa:[YOUR-PASSWORD]@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres
+```
+
+Replace `[YOUR-PASSWORD]` with your Supabase database password locally. Do not commit `backend/.env`. The backend converts the URL to the async SQLAlchemy driver, enables SSL for Supabase URLs, and disables prepared-statement caching for the Supabase pooler.
+
+Optional Supabase coding-agent skills can be installed with:
+
+```bash
+npx skills add supabase/agent-skills
+```
+
+The frontend supports professional dark and light themes. Use the theme toggle on the login screen or dashboard sidebar.
+
 ### 3. Run with Docker Compose (Recommended)
 
 ```bash

@@ -4,49 +4,60 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── shadcn/ui CSS Variables (dark theme matching project palette) ─────────── */
 @layer base {
   :root {
-    --background: 215 28% 7%;        /* surface-900 #0d1117 */
-    --foreground: 210 17% 82%;
-
-    --card: 215 25% 10%;             /* surface-800 #161b22 */
-    --card-foreground: 210 17% 82%;
-
-    --popover: 215 25% 10%;
-    --popover-foreground: 210 17% 82%;
-
-    --primary: 148 62% 39%;          /* primary-500 #25a461 */
-    --primary-foreground: 0 0% 100%;
-
-    --secondary: 215 18% 16%;        /* surface-700 #21262d */
-    --secondary-foreground: 210 17% 82%;
-
-    --muted: 215 18% 19%;            /* surface-600 #30363d */
-    --muted-foreground: 215 10% 55%;
-
-    --accent: 215 18% 16%;
-    --accent-foreground: 210 17% 82%;
-
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 100%;
-
-    --border: 215 14% 22%;
-    --input: 215 14% 22%;
-    --ring: 148 62% 39%;
-
-    --radius: 0.5rem;
+    color-scheme: light;
+    --background: 210 40% 98%; --foreground: 222 47% 11%;
+    --ink-muted: 215 20% 34%; --ink-subtle: 215 16% 47%; --ink-faint: 215 13% 62%;
+    --card: 0 0% 100%; --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%; --popover-foreground: 222 47% 11%;
+    --primary: 150 62% 38%; --primary-foreground: 0 0% 100%;
+    --secondary: 214 38% 94%; --secondary-foreground: 222 47% 11%;
+    --muted: 214 38% 94%; --muted-foreground: 215 16% 47%;
+    --accent: 210 95% 96%; --accent-foreground: 222 47% 11%;
+    --destructive: 0 72% 51%; --destructive-foreground: 0 0% 100%;
+    --border: 214 32% 86%; --input: 214 32% 86%; --ring: 150 62% 38%;
+    --surface-950: 215 33% 96%; --surface-900: 214 43% 98%; --surface-800: 0 0% 100%;
+    --surface-700: 216 33% 94%; --surface-600: 214 28% 86%; --surface-500: 215 18% 72%;
+    --shadow: 215 40% 30%; --radius: 0.75rem;
   }
+
+  .dark {
+    color-scheme: dark;
+    --background: 215 28% 7%; --foreground: 210 17% 88%;
+    --ink-muted: 215 13% 70%; --ink-subtle: 215 10% 55%; --ink-faint: 215 10% 40%;
+    --card: 215 25% 10%; --card-foreground: 210 17% 88%;
+    --popover: 215 25% 10%; --popover-foreground: 210 17% 88%;
+    --primary: 148 62% 39%; --primary-foreground: 0 0% 100%;
+    --secondary: 215 18% 16%; --secondary-foreground: 210 17% 88%;
+    --muted: 215 18% 19%; --muted-foreground: 215 10% 58%;
+    --accent: 215 18% 16%; --accent-foreground: 210 17% 88%;
+    --destructive: 0 72% 51%; --destructive-foreground: 0 0% 100%;
+    --border: 215 14% 22%; --input: 215 14% 22%; --ring: 148 62% 39%;
+    --surface-950: 216 28% 5%; --surface-900: 215 28% 7%; --surface-800: 215 25% 10%;
+    --surface-700: 215 18% 16%; --surface-600: 215 14% 22%; --surface-500: 215 10% 34%;
+    --shadow: 0 0% 0%;
+  }
+
+  * { @apply border-border; }
+  html { @apply bg-background; }
+  body { @apply bg-background text-foreground font-sans antialiased; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { @apply bg-surface-900; }
+  ::-webkit-scrollbar-thumb { @apply rounded-full bg-surface-500; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-primary-500/80; }
 }
 
-@layer base {
-  * {
-    @apply border-border;
-  }
-  body {
-    @apply bg-background text-foreground font-sans;
-  }
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { @apply bg-surface-900; }
-  ::-webkit-scrollbar-thumb { @apply bg-surface-500 rounded-full; }
+@layer components {
+  .app-bg { @apply bg-surface-900 text-ink; }
+  .app-gradient { @apply bg-[radial-gradient(circle_at_12%_18%,rgba(37,164,97,0.18),transparent_26rem),radial-gradient(circle_at_86%_8%,rgba(59,130,246,0.14),transparent_24rem),linear-gradient(135deg,hsl(var(--surface-900)/0.20),hsl(var(--surface-900)/0.94))]; }
+  .card { @apply rounded-2xl border border-surface-600 bg-surface-800 shadow-panel; }
+  .glass-panel { @apply rounded-3xl border border-surface-600/90 bg-surface-800/85 shadow-panel backdrop-blur; }
+  .input-field { @apply w-full rounded-2xl border border-surface-600 bg-surface-900/80 text-sm text-ink outline-none transition placeholder:text-ink-faint focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20; }
+  .btn-primary { @apply rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary-950/20 transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-surface-600 disabled:text-ink-faint disabled:shadow-none; }
+  .btn-ghost { @apply rounded-xl px-3 py-2 text-sm text-ink-muted transition hover:bg-surface-700 hover:text-ink; }
+  .badge-success { @apply rounded-full border border-primary-500/30 bg-primary-500/10 px-2.5 py-1 text-xs font-medium text-primary-700 dark:text-primary-200; }
+  .badge-info { @apply rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-700 dark:text-blue-200; }
+  .badge-warning { @apply rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-200; }
+  .badge-error { @apply rounded-full border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-700 dark:text-red-200; }
 }

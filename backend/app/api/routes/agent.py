@@ -11,8 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.devops_agent import _agent_pool, get_or_create_agent
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, get_db
-from app.core.security import decode_token, require_permission
-from app.schemas.schemas import ChatRequest, ChatResponse
+from app.core.security import ACCESS_TOKEN_COOKIE_NAME, decode_token, has_permission, require_permission
+from app.schemas.schemas import ChatRequest, ChatResponse, IntermediateStep
 from app.services.execution_service import complete_execution, create_execution
 from app.services.memory_service import DBChatMessageHistory
 
@@ -50,10 +50,24 @@ def _raise_provider_errors(exc: Exception) -> None:
                 f"`ollama pull {settings.DEFAULT_MODEL}`."
             ),
         )
-    raise HTTPException(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail=f"Agent error: {exc}",
-    )
+    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Agent error: {exc}")
+
+
+def _serialize_intermediate_steps(steps: list) -> list[IntermediateStep]:
+    serialized: list[IntermediateStep] = []
+    for step in steps:
+        try:
+            action, output = step
+            serialized.append(
+                IntermediateStep(
+                    tool=action.tool if hasattr(action, "tool") else str(action),
+                    input=action.tool_input if hasattr(action, "tool_input") else "",
+                    output=str(output),
+                )
+            )
+        except Exception:
+            serialized.append(IntermediateStep(tool="unknown", input="", output=str(step)))
+    return serialized
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -75,10 +89,11 @@ async def chat(
                 summary=request.message,
                 source="agent",
             )
-            # Do not hold a SQLite write lock while the agent/LLM is running.
             await db.commit()
+
         agent = get_or_create_agent(session_id=session_id, user_role=user_role)
         result = await agent.chat(request.message, db=db)
+
         if execution:
             await complete_execution(
                 db,
@@ -86,20 +101,14 @@ async def chat(
                 output=result["output"],
                 intermediate_steps=result.get("intermediate_steps", []),
             )
+
         return ChatResponse(
-    output=result["output"],
-    session_id=result["session_id"],
-    intermediate_steps=[
-        {
-            "tool": step[0].tool if hasattr(step[0], "tool") else str(step[0]),
-            "input": step[0].tool_input if hasattr(step[0], "tool_input") else "",
-            "output": str(step[1]),
-        }
-        for step in result.get("intermediate_steps", [])
-    ],
-    requires_approval=result.get("requires_approval"),
-    approval_id=result.get("approval_id"),
-)
+            output=result["output"],
+            session_id=result["session_id"],
+            intermediate_steps=_serialize_intermediate_steps(result.get("intermediate_steps", [])),
+            requires_approval=result.get("requires_approval"),
+            approval_id=result.get("approval_id"),
+        )
     except HTTPException:
         raise
     except Exception as exc:
@@ -126,14 +135,24 @@ async def agent_ws(
     session_id: Optional[str] = Query(default=None),
     token: Optional[str] = Query(default=None),
 ):
-    """Stream agent tokens to the frontend over WebSocket."""
-    if not token:
+    """Stream agent tokens to the frontend over WebSocket using cookie auth when available."""
+    auth_header = websocket.headers.get("authorization", "")
+    bearer_token = auth_header.split(" ", 1)[1].strip() if auth_header.lower().startswith("bearer ") else None
+    websocket_token = token or bearer_token or websocket.cookies.get(ACCESS_TOKEN_COOKIE_NAME)
+
+    if not websocket_token:
         await websocket.close(code=4001, reason="Missing auth token")
         return
 
     try:
-        payload = decode_token(token)
+        payload = decode_token(websocket_token)
+        if payload.get("type") != "access":
+            await websocket.close(code=4003, reason="Invalid token type")
+            return
         user_role = payload.get("role", "developer")
+        if not has_permission(user_role, "agent:chat"):
+            await websocket.close(code=4003, reason="Agent chat permission required")
+            return
         user_id = payload.get("sub", "anonymous")
     except Exception:
         await websocket.close(code=4003, reason="Invalid or expired token")

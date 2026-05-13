@@ -1,222 +1,136 @@
-import { useRef, useEffect, useState } from 'react'
-import { Send, Trash2, Bot, User, ChevronDown, ChevronRight, Wrench } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import clsx from 'clsx'
-import { useChatStore, Message } from '@/store/chatStore'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Bot, ShieldCheck, Trash2 } from 'lucide-react'
+import { ChatComposer } from '@/components/chat/ChatComposer'
+import { ChatEmptyState } from '@/components/chat/ChatEmptyState'
+import { ConnectionStatusPill } from '@/components/chat/ConnectionStatusPill'
+import { MessageBubble } from '@/components/chat/MessageBubble'
+import { useAgentWebSocket } from '@/hooks/useAgentWebSocket'
 import { agentService } from '@/services/api'
-import { formatDistanceToNow } from 'date-fns'
+import { useChatStore } from '@/store/chatStore'
+import { useAuthStore } from '@/store/authStore'
+import { CHAT_SUGGESTIONS, getRoleDefinition } from '@/lib/rbac'
 
-const SUGGESTIONS = [
-  'List all running Docker containers',
-  'Check system CPU and memory usage',
-  'Show recent GitHub Actions workflow runs',
-  'Restart the nginx container',
-  'Check the health of http://localhost:3000',
-]
-
-function MessageBubble({ msg }: { msg: Message }) {
-  const [stepsOpen, setStepsOpen] = useState(false)
-  const isAssistant = msg.role === 'assistant'
-
-  return (
-    <div className={clsx('flex gap-3 animate-slide-up', isAssistant ? 'items-start' : 'items-start flex-row-reverse')}>
-      {/* Avatar */}
-      <div className={clsx(
-        'w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5',
-        isAssistant ? 'bg-primary-600' : 'bg-surface-600'
-      )}>
-        {isAssistant ? <Bot size={16} className="text-white" /> : <User size={16} className="text-gray-300" />}
-      </div>
-
-      <div className={clsx('flex-1 max-w-[80%]', !isAssistant && 'flex flex-col items-end')}>
-        <div className={clsx(
-          'px-4 py-3 rounded-xl text-sm leading-relaxed',
-          isAssistant
-            ? 'bg-surface-800 border border-surface-600 text-gray-100'
-            : 'bg-primary-600 text-white'
-        )}>
-          {isAssistant ? (
-            <div className="prose prose-invert prose-sm max-w-none prose-code:bg-surface-700 prose-code:px-1 prose-code:rounded prose-pre:bg-surface-700">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-            </div>
-          ) : (
-            <p>{msg.content}</p>
-          )}
-        </div>
-
-        {/* Intermediate steps (tool calls) */}
-        {isAssistant && msg.steps && msg.steps.length > 0 && (
-          <div className="mt-2 w-full">
-            <button
-              onClick={() => setStepsOpen(v => !v)}
-              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
-            >
-              {stepsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-              <Wrench size={11} />
-              {msg.steps.length} tool call{msg.steps.length > 1 ? 's' : ''}
-            </button>
-            {stepsOpen && (
-              <div className="mt-2 space-y-2">
-                {msg.steps.map((step, i) => (
-                  <div key={i} className="bg-surface-900 border border-surface-600 rounded-lg p-3 text-xs font-mono">
-                    <p className="text-primary-400 mb-1">→ {step.tool}</p>
-                    <p className="text-gray-500 mb-1">Input: {typeof step.input === 'string' ? step.input : JSON.stringify(step.input)}</p>
-                    <p className="text-gray-300 whitespace-pre-wrap">{step.output}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        <p className="text-xs text-gray-600 mt-1 px-1">
-          {formatDistanceToNow(msg.timestamp, { addSuffix: true })}
-        </p>
-      </div>
-    </div>
-  )
+function createMessageId() {
+  return crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
 export default function ChatPage() {
-  const { messages, sessionId, isLoading, addMessage, setLoading, setSessionId, clearMessages } = useChatStore()
+  const { messages, sessionId, isLoading, addMessage, appendMessageContent, updateMessage, setLoading, setSessionId, clearMessages } = useChatStore()
+  const { user } = useAuthStore()
+  const role = getRoleDefinition(user?.role)
+  const suggestions = CHAT_SUGGESTIONS[role.role]
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const activeAssistantIdRef = useRef<string | null>(null)
+
+  const finishStreamingMessage = useCallback(() => {
+    if (activeAssistantIdRef.current) {
+      updateMessage(activeAssistantIdRef.current, { isStreaming: false })
+      activeAssistantIdRef.current = null
+    }
+    setLoading(false)
+  }, [setLoading, updateMessage])
+
+  const { status, lastError, sendMessage: sendWsMessage, reconnect } = useAgentWebSocket({
+    sessionId,
+    onToken: (token) => {
+      if (activeAssistantIdRef.current) appendMessageContent(activeAssistantIdRef.current, token)
+    },
+    onDone: (wsSessionId) => {
+      if (wsSessionId) setSessionId(wsSessionId)
+      finishStreamingMessage()
+    },
+    onError: (message) => {
+      if (activeAssistantIdRef.current) {
+        updateMessage(activeAssistantIdRef.current, { content: `**Streaming error:** ${message}`, isStreaming: false, error: true })
+      } else {
+        addMessage({ id: createMessageId(), role: 'assistant', content: `**Streaming error:** ${message}`, timestamp: new Date(), error: true })
+      }
+      activeAssistantIdRef.current = null
+      setLoading(false)
+    },
+  })
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [messages, isLoading])
 
-  const sendMessage = async (text?: string) => {
-    const msg = (text || input).trim()
-    if (!msg || isLoading) return
-
-    setInput('')
-    addMessage({ id: crypto.randomUUID(), role: 'user', content: msg, timestamp: new Date() })
-    setLoading(true)
-
+  const sendViaHttpFallback = useCallback(async (message: string, assistantId: string) => {
     try {
-      const res = await agentService.chat(msg, sessionId ?? undefined)
-      if (res.session_id && !sessionId) setSessionId(res.session_id)
-      addMessage({
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: res.output,
-        timestamp: new Date(),
+      const res = await agentService.chat(message, sessionId ?? undefined)
+      if (res.session_id) setSessionId(res.session_id)
+      updateMessage(assistantId, {
+        content: res.output || 'No response returned by the agent.',
         steps: res.intermediate_steps,
         requiresApproval: res.requires_approval,
         approvalId: res.approval_id,
+        isStreaming: false,
       })
     } catch (err: any) {
-      addMessage({
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: `❌ Error: ${err.response?.data?.detail || err.message || 'Something went wrong.'}`,
-        timestamp: new Date(),
-      })
+      updateMessage(assistantId, { content: `**Request failed:** ${err.response?.data?.detail || err.message || 'Something went wrong.'}`, isStreaming: false, error: true })
     } finally {
+      activeAssistantIdRef.current = null
       setLoading(false)
     }
-  }
+  }, [sessionId, setLoading, setSessionId, updateMessage])
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage()
+  const sendMessage = useCallback(async (value?: string) => {
+    const message = (value || input).trim()
+    if (!message || isLoading) return
+
+    setInput('')
+    const assistantId = createMessageId()
+    activeAssistantIdRef.current = assistantId
+
+    addMessage({ id: createMessageId(), role: 'user', content: message, timestamp: new Date() })
+    addMessage({ id: assistantId, role: 'assistant', content: '', timestamp: new Date(), isStreaming: status === 'connected' })
+    setLoading(true)
+
+    const sentOverSocket = status === 'connected' && sendWsMessage({ message, sessionId })
+    if (!sentOverSocket) {
+      updateMessage(assistantId, { isStreaming: false, content: '_WebSocket unavailable. Using secure HTTP fallback…_' })
+      await sendViaHttpFallback(message, assistantId)
+    }
+  }, [addMessage, input, isLoading, sendViaHttpFallback, sendWsMessage, sessionId, setLoading, status, updateMessage])
+
+  const handleClear = async () => {
+    const idToClear = sessionId
+    clearMessages()
+    activeAssistantIdRef.current = null
+    setLoading(false)
+    if (idToClear) {
+      try { await agentService.clearSession(idToClear) } catch { /* local clear still succeeds */ }
     }
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="px-6 py-4 border-b border-surface-600 flex items-center justify-between shrink-0">
-        <div>
-          <h1 className="text-base font-semibold text-white">Agent Chat</h1>
-          <p className="text-xs text-gray-500">Natural language DevOps commands</p>
-        </div>
-        {messages.length > 0 && (
-          <button onClick={clearMessages} className="btn-ghost text-xs flex items-center gap-1.5">
-            <Trash2 size={13} /> Clear
-          </button>
-        )}
-      </div>
-
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
-        {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center space-y-6">
-            <div className="w-14 h-14 bg-primary-600/20 border border-primary-600/30 rounded-2xl flex items-center justify-center">
-              <Bot size={28} className="text-primary-400" />
-            </div>
+    <div className="flex h-full flex-col bg-surface-900">
+      <div className="border-b border-surface-600/80 bg-surface-900/90 px-4 py-4 backdrop-blur xl:px-6">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-primary-500/30 bg-primary-500/10 shadow-glow"><Bot size={22} className="text-primary-500 dark:text-primary-300" /></div>
             <div>
-              <h2 className="text-lg font-semibold text-white mb-1">Smart DevOps Assistant</h2>
-              <p className="text-sm text-gray-500 max-w-sm">
-                I can manage Docker containers, trigger CI/CD pipelines, check system health, and more — just ask.
-              </p>
-            </div>
-            <div className="grid grid-cols-1 gap-2 w-full max-w-lg">
-              {SUGGESTIONS.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => sendMessage(s)}
-                  className="text-left px-4 py-2.5 bg-surface-800 hover:bg-surface-700 border border-surface-600 hover:border-primary-600/40 rounded-lg text-sm text-gray-300 hover:text-white transition-all"
-                >
-                  {s}
-                </button>
-              ))}
+              <div className="flex items-center gap-2"><h1 className="text-base font-semibold text-ink">Agent Chat</h1><span className={`hidden rounded-full border px-2 py-0.5 text-[11px] uppercase tracking-[0.18em] sm:inline-flex ${role.badgeClass}`}>{role.label}</span></div>
+              <p className="mt-1 text-xs text-ink-subtle">{role.role === 'viewer' ? 'Read-only AI insight for operational awareness' : role.role === 'operator' ? 'Operational AI workspace with approval-gated production actions' : role.role === 'admin' ? 'Full AI control plane with user and approval governance' : 'Developer AI workspace for diagnostics and staging workflows'}</p>
             </div>
           </div>
-        ) : (
-          messages.map((msg) => <MessageBubble key={msg.id} msg={msg} />)
-        )}
-
-        {isLoading && (
-          <div className="flex gap-3 items-start animate-fade-in">
-            <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-              <Bot size={16} className="text-white" />
-            </div>
-            <div className="bg-surface-800 border border-surface-600 rounded-xl px-4 py-3">
-              <div className="flex gap-1.5">
-                {[0, 1, 2].map((i) => (
-                  <span
-                    key={i}
-                    className="w-1.5 h-1.5 bg-primary-400 rounded-full animate-bounce"
-                    style={{ animationDelay: `${i * 0.15}s` }}
-                  />
-                ))}
-              </div>
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <ConnectionStatusPill status={status} lastError={lastError} onReconnect={reconnect} />
+            <div className="hidden items-center gap-1.5 rounded-full border border-surface-600 bg-surface-800 px-3 py-1.5 text-xs text-ink-muted sm:flex"><ShieldCheck size={13} className="text-primary-500 dark:text-primary-300" />Cookie auth</div>
+            {messages.length > 0 && <button onClick={handleClear} className="flex items-center gap-1.5 rounded-full border border-surface-600 bg-surface-800 px-3 py-1.5 text-xs text-ink-muted transition hover:border-red-500/40 hover:text-red-500 dark:hover:text-red-300"><Trash2 size={13} /> Clear</button>}
           </div>
-        )}
-        <div ref={bottomRef} />
-      </div>
-
-      {/* Input */}
-      <div className="px-6 py-4 border-t border-surface-600 shrink-0">
-        <div className="flex gap-3 items-end">
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask me to do something... (Shift+Enter for newline)"
-            rows={1}
-            className="flex-1 bg-surface-800 border border-surface-600 focus:border-primary-500 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 resize-none outline-none transition-colors"
-            style={{ maxHeight: '120px' }}
-          />
-          <button
-            onClick={() => sendMessage()}
-            disabled={!input.trim() || isLoading}
-            className="btn-primary h-11 w-11 flex items-center justify-center rounded-xl p-0 shrink-0"
-          >
-            <Send size={16} />
-          </button>
         </div>
-        <p className="text-xs text-gray-600 mt-2 text-center">
-          High-risk actions require human approval before execution.
-        </p>
       </div>
+      <div className="relative flex-1 overflow-hidden">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(37,164,97,0.12),transparent_32rem),radial-gradient(circle_at_bottom_right,rgba(59,130,246,0.12),transparent_30rem)]" />
+        <div className="relative h-full overflow-y-auto px-4 py-6 xl:px-6">
+          <div className="mx-auto flex min-h-full max-w-5xl flex-col gap-5">
+            {messages.length === 0 ? <ChatEmptyState suggestions={suggestions} onSuggestion={sendMessage} disabled={isLoading} /> : messages.map((message) => <MessageBubble key={message.id} msg={message} />)}
+            <div ref={bottomRef} />
+          </div>
+        </div>
+      </div>
+      <ChatComposer value={input} onChange={setInput} onSubmit={() => sendMessage()} disabled={isLoading} />
     </div>
   )
 }
