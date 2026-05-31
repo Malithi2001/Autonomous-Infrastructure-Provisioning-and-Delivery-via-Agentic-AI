@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { Bot, CheckSquare, Clock, LogOut, Shield, Terminal, UsersRound } from 'lucide-react'
+import { Bot, CheckSquare, Clock, GitPullRequest, LogOut, SearchCode, Shield, Terminal, TriangleAlert, UsersRound } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { getRoleDefinition, hasPermission } from '@/lib/rbac'
@@ -7,8 +7,11 @@ import clsx from 'clsx'
 
 const navItems = [
   { to: '/chat', icon: Terminal, label: 'Agent Chat', permission: 'agent:chat' as const },
+  { to: '/diagnosis', icon: SearchCode, label: 'CI/CD Assistant', permission: 'logs:read' as const },
+  { to: '/repository-setup', icon: GitPullRequest, label: 'Repository Setup', permission: 'executions:write' as const },
+  { to: '/workflow-failures', icon: TriangleAlert, label: 'Workflow Failures', permission: 'executions:read' as const },
   { to: '/approvals', icon: CheckSquare, label: 'Approvals', permission: 'approvals:read' as const },
-  { to: '/executions', icon: Clock, label: 'Executions', permission: 'executions:read' as const },
+  { to: '/executions', icon: Clock, label: 'Audit', permission: 'executions:read' as const },
   { to: '/users', icon: UsersRound, label: 'Users & Roles', permission: 'users:manage' as const },
 ]
 

@@ -1,18 +1,41 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle, XCircle, Clock, Loader, Activity } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, Loader, Activity, X } from 'lucide-react'
 import { executionService } from '@/services/api'
 import { formatDistanceToNow } from 'date-fns'
 
 interface Execution {
   id: string
   requested_by: string
+  tool_name: string
   status: string
+  source: string
   summary: string
   details?: string
-  source?: string
   started_at?: string
   completed_at?: string
 }
+
+interface Filters {
+  tool: string | null
+  status: string | null
+  actor: string | null
+  days: number
+}
+
+const TOOL_OPTIONS = [
+  'failure_prediction_model',
+  'github_create_workflow_pr',
+  'github_create_fix_pr',
+  'github_workflow_pr',
+  'github_fix_pr',
+  'repository_analyzer',
+  'workflow_generator',
+  'fix_recommendation',
+  'approval_decision',
+  'github_log_downloader',
+]
+
+const STATUS_OPTIONS = ['completed', 'failed', 'pending', 'cancelled']
 
 const statusIcon = (status: string) => {
   switch (status) {
@@ -40,18 +63,138 @@ const relativeTime = (value?: string) => {
 export default function ExecutionsPage() {
   const [executions, setExecutions] = useState<Execution[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [filters, setFilters] = useState<Filters>({
+    tool: null,
+    status: null,
+    actor: null,
+    days: 7,
+  })
 
-  useEffect(() => { executionService.list().then(setExecutions).finally(() => setLoading(false)) }, [])
+  const fetchExecutions = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const data = await executionService.list({
+        tool: filters.tool,
+        status: filters.status,
+        actor: filters.actor,
+        days: filters.days,
+      })
+      setExecutions(Array.isArray(data) ? data : [])
+    } catch (err: any) {
+      setExecutions([])
+      setError(err.response?.data?.detail || err.message || 'Unable to load audit records.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchExecutions()
+  }, [filters])
+
+  const handleClearFilters = () => {
+    setFilters({ tool: null, status: null, actor: null, days: 7 })
+  }
+
+  const hasActiveFilters = filters.tool || filters.status || filters.actor
 
   return (
     <div className="flex h-full flex-col bg-surface-900">
       <div className="shrink-0 border-b border-surface-600 bg-surface-900/90 px-6 py-4 backdrop-blur">
-        <div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-blue-500/30 bg-blue-500/10"><Activity size={19} className="text-blue-600 dark:text-blue-300" /></div><div><h1 className="text-base font-semibold text-ink">Execution History</h1><p className="text-xs text-ink-subtle">Full audit trail of all agent actions</p></div></div>
+        <div className="flex items-center gap-3 mb-4">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-blue-500/30 bg-blue-500/10">
+            <Activity size={19} className="text-blue-600 dark:text-blue-300" />
+          </div>
+          <div>
+            <h1 className="text-base font-semibold text-ink">Audit Log</h1>
+            <p className="text-xs text-ink-subtle">Recent model, GitHub, approval, and agent actions</p>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap gap-3 items-center">
+          <select
+            value={filters.tool || ''}
+            onChange={(e) => setFilters({ ...filters, tool: e.target.value || null })}
+            className="text-sm px-2 py-1 rounded border border-surface-600 bg-surface-800 text-ink"
+          >
+            <option value="">All Tools</option>
+            {TOOL_OPTIONS.map(tool => <option key={tool} value={tool}>{tool}</option>)}
+          </select>
+
+          <select
+            value={filters.status || ''}
+            onChange={(e) => setFilters({ ...filters, status: e.target.value || null })}
+            className="text-sm px-2 py-1 rounded border border-surface-600 bg-surface-800 text-ink"
+          >
+            <option value="">All Status</option>
+            {STATUS_OPTIONS.map(status => <option key={status} value={status}>{status}</option>)}
+          </select>
+
+          <select
+            value={filters.days.toString()}
+            onChange={(e) => setFilters({ ...filters, days: parseInt(e.target.value) })}
+            className="text-sm px-2 py-1 rounded border border-surface-600 bg-surface-800 text-ink"
+          >
+            <option value="1">Last 24 hours</option>
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+          </select>
+
+          {hasActiveFilters && (
+            <button
+              onClick={handleClearFilters}
+              className="text-sm px-2 py-1 rounded border border-surface-600 bg-surface-800 text-ink-subtle hover:text-ink flex items-center gap-1"
+            >
+              <X size={14} />
+              Clear
+            </button>
+          )}
+        </div>
       </div>
+
       <div className="flex-1 overflow-y-auto px-6 py-6">
-        {loading ? <div className="flex h-32 items-center justify-center"><div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" /></div>
-          : executions.length === 0 ? <div className="flex h-full flex-col items-center justify-center text-center"><div className="mb-4 rounded-3xl border border-surface-600 bg-surface-800 p-4"><Clock size={40} className="text-ink-subtle" /></div><p className="font-medium text-ink">No executions yet</p><p className="mt-1 text-sm text-ink-subtle">Agent actions will be logged here with full traceability.</p></div>
-            : <div className="mx-auto max-w-4xl space-y-2">{executions.map((ex) => <div key={ex.id} className="card flex items-center gap-4 px-4 py-3 transition-colors hover:border-primary-500/30"><div className="shrink-0">{statusIcon(ex.status)}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-ink">{ex.summary}</p><p className="mt-0.5 text-xs text-ink-subtle">{ex.source && <span className="mr-2 font-mono text-primary-700 dark:text-primary-300">{ex.source}</span>}{relativeTime(ex.started_at)}</p></div><div className="shrink-0">{statusBadge(ex.status)}</div></div>)}</div>}
+        {loading ? (
+          <div className="flex h-32 items-center justify-center">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
+          </div>
+        ) : error ? (
+          <div className="mx-auto max-w-3xl rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-700 dark:text-red-200">
+            {error}
+          </div>
+        ) : executions.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center text-center">
+            <div className="mb-4 rounded-3xl border border-surface-600 bg-surface-800 p-4">
+              <Clock size={40} className="text-ink-subtle" />
+            </div>
+            <p className="font-medium text-ink">No executions found</p>
+            <p className="mt-1 text-sm text-ink-subtle">Try adjusting your filters or check back later.</p>
+          </div>
+        ) : (
+          <div className="mx-auto max-w-4xl space-y-2">
+            {executions.map((ex) => (
+              <div key={ex.id} className="card flex flex-col gap-2 px-4 py-3 transition-colors hover:border-primary-500/30">
+                <div className="flex items-center gap-4">
+                  <div className="shrink-0">{statusIcon(ex.status)}</div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-ink">{ex.summary}</p>
+                    <p className="mt-0.5 text-xs text-ink-subtle">
+                      {ex.source && <span className="mr-2 font-mono text-primary-700 dark:text-primary-300">{ex.source}</span>}
+                      {ex.tool_name && <span className="mr-2 font-mono text-ink-subtle">{ex.tool_name}</span>}
+                      {relativeTime(ex.started_at)}
+                    </p>
+                  </div>
+                  <div className="shrink-0">{statusBadge(ex.status)}</div>
+                </div>
+                {ex.requested_by && (
+                  <p className="text-xs text-ink-subtle ml-8">By: {ex.requested_by}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

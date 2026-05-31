@@ -6,7 +6,18 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import agent, auth, approvals, executions, health, webhooks
+from app.api.routes import (
+    agent,
+    approvals,
+    auth,
+    cicd,
+    executions,
+    health,
+    model,
+    repositories,
+    webhooks,
+    workflow_failures,
+)
 from app.core.config import settings
 from app.core.database import init_db
 from app.core.logging import setup_logging
@@ -54,4 +65,13 @@ app.include_router(agent.router,       prefix="/ws",                tags=["Agent
 app.add_api_websocket_route("/ws/agent", agent.agent_ws)
 app.include_router(approvals.router,   prefix="/api/v1/approvals",  tags=["HITL Approvals"])
 app.include_router(executions.router,  prefix="/api/v1/executions", tags=["Executions"])
+app.include_router(executions.router,  prefix="/api/v1/audit",      tags=["Audit"])
+app.include_router(model.router,       prefix="/api/v1/model",      tags=["Failure Prediction Model"])
+app.include_router(cicd.router,        prefix="/api/v1/cicd",       tags=["CI/CD"])
+app.include_router(repositories.router, prefix="/api/v1/repositories", tags=["Repositories"])
 app.include_router(webhooks.router,    prefix="/api/v1/webhooks",   tags=["Webhooks"])
+app.include_router(
+    workflow_failures.router,
+    prefix="/api/v1/workflow-failures",
+    tags=["Workflow Failures"],
+)

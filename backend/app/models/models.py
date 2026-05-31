@@ -3,17 +3,20 @@ SQLAlchemy ORM models.
 
 Tables
 ------
-users            — auth accounts
-user_sessions    — refresh token store
-chat_messages    — persistent conversation memory (per session_id)
+users             — auth accounts
+user_sessions     — refresh token store
+chat_messages     — persistent conversation memory (per session_id)
 approval_requests — HITL pending/decided gates
-executions       — full audit trail of every agent action
+executions        — full audit trail of every agent action
+workflow_failures — GitHub Actions failure diagnoses
+automation_rules  — optional policy rules for future self-healing automation
 """
+import json
 import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    Boolean, DateTime, Enum, ForeignKey,
+    BigInteger, Boolean, DateTime, Enum, Float, ForeignKey,
     Integer, String, Text, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -168,3 +171,115 @@ class Execution(Base):
     approval: Mapped["ApprovalRequest | None"] = relationship(
         "ApprovalRequest", back_populates="execution",
     )
+
+
+# ── GitHub Workflow Failure Diagnosis ─────────────────────────────────────────
+
+class WorkflowFailure(Base):
+    """
+    Persisted diagnosis for a failed GitHub Actions workflow run.
+
+    This table stores the webhook-facing CI/CD failure result separately from
+    the generic execution audit trail so the UI/API can list diagnosed failures.
+    """
+    __tablename__ = "workflow_failures"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True,
+        default=lambda: str(uuid.uuid4()), nullable=False,
+    )
+    repo_full_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    workflow_run_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    workflow_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    branch: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    conclusion: Mapped[str] = mapped_column(String(50), nullable=False, default="failure", index=True)
+    workflow_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    log_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    predicted_label: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    suggested_fix: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recommendation_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fix_pr_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="diagnosed", index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False,
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, onupdate=func.now(),
+    )
+
+    @property
+    def recommendation(self) -> dict | None:
+        """Return stored recommendation JSON as a dictionary for API output."""
+        if not self.recommendation_json:
+            return None
+        try:
+            loaded = json.loads(self.recommendation_json)
+        except json.JSONDecodeError:
+            return None
+        return loaded if isinstance(loaded, dict) else None
+
+
+# ── GitHub App Repository Installations ──────────────────────────────────────
+
+class RepositoryInstallation(Base):
+    """
+    Repository access granted through a GitHub App installation.
+
+    This table lets repository operations prefer installation tokens for real
+    installed repositories while keeping PAT fallback for local development.
+    """
+    __tablename__ = "repository_installations"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True,
+        default=lambda: str(uuid.uuid4()), nullable=False,
+    )
+    installation_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    repo_full_name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    owner: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
+    repo: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
+    default_branch: Mapped[str] = mapped_column(String(255), nullable=False, default="main")
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="active", index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False,
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, onupdate=func.now(),
+    )
+
+
+# ── Automation Rules ──────────────────────────────────────────────────────────
+
+class AutomationRule(Base):
+    """
+    Persisted automation policy.
+
+    The current MVP does not execute these rules yet, but the ORM model is kept
+    in sync with the Supabase schema so create_all(), tests, and future rule
+    services agree on the same database contract.
+    """
+    __tablename__ = "automation_rules"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True,
+        default=lambda: str(uuid.uuid4()), nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    trigger_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    condition_json: Mapped[str] = mapped_column(Text, nullable=False)
+    action_tool: Mapped[str] = mapped_column(String(100), nullable=False)
+    action_input: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    risk_level: Mapped[str] = mapped_column(String(20), nullable=False, default="medium")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    cooldown_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=300)
+    requires_approval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    last_result: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(100), nullable=False, default="system")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False,
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

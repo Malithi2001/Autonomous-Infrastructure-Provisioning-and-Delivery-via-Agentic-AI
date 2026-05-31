@@ -113,7 +113,8 @@ async def ensure_default_admin() -> None:
             "role": UserRole.ADMIN,
         },
         {
-            "email": "operator@devops.local",
+            "email": "operator@devops.example.com",
+            "legacy_email": "operator@devops.local",
             "username": "operator",
             "password": "operator123",
             "role": UserRole.OPERATOR,
@@ -125,7 +126,8 @@ async def ensure_default_admin() -> None:
             "role": UserRole.DEVELOPER,
         },
         {
-            "email": "viewer@company.local",
+            "email": "viewer@company.example.com",
+            "legacy_email": "viewer@company.local",
             "username": "viewer",
             "password": "viewer123",
             "role": UserRole.VIEWER,
@@ -137,16 +139,24 @@ async def ensure_default_admin() -> None:
 
     async with AsyncSessionLocal() as session:
         created = []
+        updated = []
         for demo in demo_users:
+            legacy_email = demo.get("legacy_email")
+            lookup_conditions = [
+                User.username == demo["username"],
+                User.email == demo["email"],
+            ]
+            if legacy_email:
+                lookup_conditions.append(User.email == legacy_email)
+
             result = await session.execute(
-                select(User).where(
-                    or_(
-                        User.username == demo["username"],
-                        User.email == demo["email"],
-                    )
-                )
+                select(User).where(or_(*lookup_conditions))
             )
-            if result.scalar_one_or_none():
+            user = result.scalar_one_or_none()
+            if user:
+                if legacy_email and user.email == legacy_email:
+                    user.email = demo["email"]
+                    updated.append(demo["username"])
                 continue
 
             session.add(
@@ -160,6 +170,6 @@ async def ensure_default_admin() -> None:
             )
             created.append(demo["username"])
 
-        if created:
+        if created or updated:
             await session.commit()
-            logger.info("database.default_users.seeded", usernames=created)
+            logger.info("database.default_users.seeded", usernames=created, updated_usernames=updated)

@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
     MEMORY_BACKEND: str = "auto"
+    CELERY_BROKER_URL: str = ""
+    CELERY_RESULT_BACKEND: str = ""
 
     # Auth
     SECRET_KEY: str = "change-this-in-production"
@@ -70,6 +72,15 @@ class Settings(BaseSettings):
     GITHUB_TOKEN: str = ""
     GITHUB_WEBHOOK_SECRET: str = ""
     GITHUB_REPO_FULL_NAME: str = ""
+    GITHUB_APP_ID: str = ""
+    GITHUB_APP_PRIVATE_KEY: str = ""
+    GITHUB_APP_WEBHOOK_SECRET: str = ""
+    GITHUB_APP_CLIENT_ID: str = ""
+    GITHUB_APP_CLIENT_SECRET: str = ""
+
+    # ML model artifacts
+    FAILURE_MODEL_PATH: str = ""
+    FIX_MAPPING_PATH: str = ""
 
     # AWS
     AWS_ACCESS_KEY_ID: str = ""

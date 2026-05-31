@@ -26,8 +26,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.api.routes import approvals as approvals_router, health
 from app.core.database import Base, get_db
-from app.core.security import UserRole, create_access_token, hash_password
-from app.models.models import ApprovalRequest, Execution, User
+from app.core.security import create_access_token
+from app.models.models import ApprovalRequest, WorkflowFailure
 
 
 # ── In-memory SQLite test DB ──────────────────────────────────────────────────
@@ -194,6 +194,219 @@ class TestDecideApproval:
         assert body["status"] == "rejected"
         await db_session.refresh(record)
         assert record.status == "rejected"
+
+    @pytest.mark.asyncio
+    async def test_approve_fix_pr_approval_resumes_fix_service(
+        self, client: AsyncClient, db_session: AsyncSession, monkeypatch
+    ):
+        failure = WorkflowFailure(
+            id=str(uuid.uuid4()),
+            repo_full_name="octo-org/demo-app",
+            workflow_run_id=456,
+            workflow_name="CI",
+            conclusion="failure",
+            predicted_label="wrong_runtime_version",
+            suggested_fix="Update the runtime version.",
+            status="approval_pending",
+        )
+        db_session.add(failure)
+        record = ApprovalRequest(
+            id=str(uuid.uuid4()),
+            requested_by="dev",
+            tool_name="github_create_fix_pr",
+            tool_input=json.dumps({"workflow_failure_id": failure.id}),
+            action="Create GitHub fix pull request",
+            risk_level="medium",
+            summary="Approve fix PR for octo-org/demo-app workflow run 456.",
+            status="pending",
+        )
+        db_session.add(record)
+        await db_session.flush()
+
+        async def _fake_create_fix_pr_for_failure(db, workflow_failure_id, current_user, **kwargs):
+            assert workflow_failure_id == failure.id
+            assert current_user["username"] == "admin"
+            assert kwargs["bypass_approval"] is True
+            assert kwargs["audit"] is False
+            failure.status = "fix_pr_created"
+            failure.fix_pr_url = "https://github.com/octo-org/demo-app/pull/456"
+            return {
+                "workflow_failure_id": failure.id,
+                "repo_full_name": failure.repo_full_name,
+                "status": "fix_pr_created",
+                "pull_request_url": failure.fix_pr_url,
+                "message": "Created fix PR after approval.",
+            }
+
+        monkeypatch.setattr(approvals_router, "create_fix_pr_for_failure", _fake_create_fix_pr_for_failure)
+
+        resp = await client.post(
+            f"/api/v1/approvals/{record.id}/decide",
+            json={"approved": True, "note": "Approved for demo"},
+            headers=_admin_headers(),
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "approved"
+        assert body["execution_status"] == "completed"
+        await db_session.refresh(record)
+        await db_session.refresh(failure)
+        assert record.status == "approved"
+        assert failure.status == "fix_pr_created"
+        assert failure.fix_pr_url == "https://github.com/octo-org/demo-app/pull/456"
+
+    @pytest.mark.asyncio
+    async def test_approve_fix_pr_approval_creates_pr_with_mocked_github(
+        self, client: AsyncClient, db_session: AsyncSession, monkeypatch
+    ):
+        from app.services import fix_pr_service
+
+        failure = WorkflowFailure(
+            id=str(uuid.uuid4()),
+            repo_full_name="octo-org/demo-app",
+            workflow_run_id=321,
+            workflow_name="CI",
+            conclusion="failure",
+            predicted_label="npm_missing_test_script",
+            suggested_fix="Use npm test --if-present for repositories without a test script.",
+            log_excerpt="npm ERR! Missing script: test",
+            status="approval_pending",
+        )
+        db_session.add(failure)
+        record = ApprovalRequest(
+            id=str(uuid.uuid4()),
+            requested_by="dev",
+            tool_name="github_create_fix_pr",
+            tool_input=json.dumps({"workflow_failure_id": failure.id}),
+            action="Create GitHub fix pull request",
+            risk_level="medium",
+            summary="Approve fix PR for octo-org/demo-app workflow run 321.",
+            status="pending",
+        )
+        db_session.add(record)
+        await db_session.flush()
+
+        captured: dict[str, str] = {}
+
+        async def _no_installation(db, repo_full_name):
+            assert repo_full_name == "octo-org/demo-app"
+            return None
+
+        def _get_default_branch(repo_full_name: str) -> str:
+            assert repo_full_name == "octo-org/demo-app"
+            return "main"
+
+        def _get_file_content(repo_full_name: str, path: str, branch: str) -> dict:
+            assert repo_full_name == "octo-org/demo-app"
+            assert branch == "main"
+            assert path == ".github/workflows/ci.yml"
+            return {
+                "path": path,
+                "content": "name: CI\non: [push]\njobs:\n  test:\n    steps:\n      - run: npm test\n",
+                "sha": "abc123",
+            }
+
+        def _create_branch(repo_full_name: str, base_branch: str, new_branch: str) -> dict:
+            captured["branch"] = new_branch
+            assert base_branch == "main"
+            return {"name": new_branch}
+
+        def _create_or_update_file(
+            repo_full_name: str,
+            branch: str,
+            path: str,
+            content: str,
+            commit_message: str,
+            *,
+            overwrite: bool = False,
+        ) -> dict:
+            captured["content"] = content
+            assert branch == "ai-cicd/fix-321"
+            assert path == ".github/workflows/ci.yml"
+            assert overwrite is True
+            assert "npm test --if-present" in content
+            return {"path": path, "commit": {"message": commit_message}}
+
+        def _create_pull_request(
+            repo_full_name: str,
+            head_branch: str,
+            base_branch: str,
+            title: str,
+            body: str,
+        ) -> dict:
+            captured["pr_body"] = body
+            assert head_branch == "ai-cicd/fix-321"
+            assert base_branch == "main"
+            assert "run 321" in title
+            assert "Safety notes" in body
+            return {"html_url": "https://github.com/octo-org/demo-app/pull/321"}
+
+        monkeypatch.setattr(fix_pr_service, "get_installation_for_repo", _no_installation)
+        monkeypatch.setattr(fix_pr_service.github_tool, "get_default_branch", _get_default_branch)
+        monkeypatch.setattr(fix_pr_service.github_tool, "get_file_content", _get_file_content)
+        monkeypatch.setattr(fix_pr_service.github_tool, "create_branch", _create_branch)
+        monkeypatch.setattr(fix_pr_service.github_tool, "create_or_update_file", _create_or_update_file)
+        monkeypatch.setattr(fix_pr_service.github_tool, "create_pull_request", _create_pull_request)
+
+        resp = await client.post(
+            f"/api/v1/approvals/{record.id}/decide",
+            json={"approved": True, "note": "Approved after review"},
+            headers=_admin_headers(),
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "approved"
+        assert body["execution_status"] == "completed"
+        assert "https://github.com/octo-org/demo-app/pull/321" in body["execution_details"]
+        await db_session.refresh(record)
+        await db_session.refresh(failure)
+        assert record.status == "approved"
+        assert failure.status == "fix_pr_created"
+        assert failure.fix_pr_url == "https://github.com/octo-org/demo-app/pull/321"
+        assert captured["branch"] == "ai-cicd/fix-321"
+        assert "npm test --if-present" in captured["content"]
+        assert "No direct commit was made to main/master" in captured["pr_body"]
+
+    @pytest.mark.asyncio
+    async def test_reject_fix_pr_approval_updates_workflow_failure(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
+        failure = WorkflowFailure(
+            id=str(uuid.uuid4()),
+            repo_full_name="octo-org/demo-app",
+            workflow_run_id=789,
+            workflow_name="CI",
+            conclusion="failure",
+            predicted_label="wrong_runtime_version",
+            status="approval_pending",
+        )
+        db_session.add(failure)
+        record = ApprovalRequest(
+            id=str(uuid.uuid4()),
+            requested_by="dev",
+            tool_name="github_create_fix_pr",
+            tool_input=json.dumps({"workflow_failure_id": failure.id}),
+            action="Create GitHub fix pull request",
+            risk_level="medium",
+            summary="Approve fix PR for octo-org/demo-app workflow run 789.",
+            status="pending",
+        )
+        db_session.add(record)
+        await db_session.flush()
+
+        resp = await client.post(
+            f"/api/v1/approvals/{record.id}/decide",
+            json={"approved": False, "note": "Needs manual review"},
+            headers=_admin_headers(),
+        )
+
+        assert resp.status_code == 200
+        await db_session.refresh(record)
+        await db_session.refresh(failure)
+        assert record.status == "rejected"
+        assert failure.status == "rejected"
 
     @pytest.mark.asyncio
     async def test_decide_twice_returns_409(

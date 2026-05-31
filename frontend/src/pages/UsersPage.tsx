@@ -45,9 +45,20 @@ export default function UsersPage() {
 
   const fetchUsers = async () => {
     setLoading(true)
+    setError('')
     try {
       const data = await authService.listUsers()
       setUsers(data)
+    } catch (err: any) {
+      setUsers([])
+      const status = err.response?.status
+      if (status === 401) {
+        setError('Please sign in again before managing users.')
+      } else if (status === 403) {
+        setError('Admin access is required to manage users.')
+      } else {
+        setError(err.response?.data?.detail || 'Could not load users. Please try again.')
+      }
     } finally {
       setLoading(false)
     }
@@ -161,7 +172,7 @@ export default function UsersPage() {
 
             <div>
               <label className="mb-2 block text-xs font-medium uppercase tracking-[0.16em] text-ink-subtle">Email</label>
-              <input value={form.email} onChange={(event) => updateForm('email', event.target.value)} type="email" placeholder="operator@devops.local" className="input-field px-4 py-3" />
+              <input value={form.email} onChange={(event) => updateForm('email', event.target.value)} type="email" placeholder="operator@devops.example.com" className="input-field px-4 py-3" />
             </div>
             <div>
               <label className="mb-2 block text-xs font-medium uppercase tracking-[0.16em] text-ink-subtle">Username</label>

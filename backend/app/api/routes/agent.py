@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from typing import Optional
 
@@ -9,6 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSock
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.devops_agent import _agent_pool, get_or_create_agent
+from app.agents.tools_registry import HITLApprovalRequired
+from app.api.routes.approvals import create_approval_request
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, get_db
 from app.core.security import ACCESS_TOKEN_COOKIE_NAME, decode_token, has_permission, require_permission
@@ -92,7 +95,45 @@ async def chat(
             await db.commit()
 
         agent = get_or_create_agent(session_id=session_id, user_role=user_role)
-        result = await agent.chat(request.message, db=db)
+        try:
+            result = await agent.chat(request.message, db=db)
+        except HITLApprovalRequired as approval_exc:
+            approval = await create_approval_request(
+                db=db,
+                session_id=session_id,
+                requested_by=current_user.get("username", current_user.get("sub", "unknown")),
+                tool_name=approval_exc.tool_name,
+                tool_input=approval_exc.tool_input,
+                action=approval_exc.summary,
+                risk_level=approval_exc.risk_level,
+                summary=approval_exc.summary,
+                timeout_seconds=settings.HITL_APPROVAL_TIMEOUT_SECONDS,
+            )
+            if execution:
+                execution.status = "pending"
+                execution.summary = f"Approval required: {approval_exc.summary}"
+                execution.details = json.dumps(
+                    {
+                        "approval_id": approval.id,
+                        "tool_name": approval_exc.tool_name,
+                        "risk_level": approval_exc.risk_level,
+                        "tool_input": approval_exc.tool_input,
+                    },
+                    ensure_ascii=False,
+                )
+                execution.approval_id = approval.id
+                await db.flush()
+            await db.commit()
+            return ChatResponse(
+                output=(
+                    f"Approval required before running `{approval_exc.tool_name}`. "
+                    f"Risk level: {approval_exc.risk_level}. {approval_exc.summary}"
+                ),
+                session_id=session_id,
+                intermediate_steps=[],
+                requires_approval=True,
+                approval_id=approval.id,
+            )
 
         if execution:
             await complete_execution(
