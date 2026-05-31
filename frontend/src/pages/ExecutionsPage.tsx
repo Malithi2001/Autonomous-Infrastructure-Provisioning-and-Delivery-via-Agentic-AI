@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
-import { CheckCircle, XCircle, Clock, Loader, Activity, X } from 'lucide-react'
-import { executionService } from '@/services/api'
-import { formatDistanceToNow } from 'date-fns'
+import { executionService } from '@/services/api';
+import { formatDistanceToNow } from 'date-fns';
+import { Activity, CheckCircle, Clock, Loader, X, XCircle } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 interface Execution {
   id: string

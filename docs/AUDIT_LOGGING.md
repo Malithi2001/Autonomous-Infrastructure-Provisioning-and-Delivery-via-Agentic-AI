@@ -198,7 +198,7 @@ from app.services import audit_service
 
 async def my_ci_operation(input_data, db: AsyncSession, current_user: dict):
     actor = current_user.get("username", "unknown")
-    
+
     try:
         result = perform_operation(input_data)
         await audit_service.log_execution(
