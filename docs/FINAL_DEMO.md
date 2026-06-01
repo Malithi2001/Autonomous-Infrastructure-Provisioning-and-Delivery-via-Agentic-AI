@@ -1,594 +1,208 @@
-# Final Demo Script
+# Final Demo Guide
 
-This script is designed for a supervisor demo of the final-year project:
+This guide gives a clean supervisor demo flow. It focuses on the working MVP: CI/CD setup, failure diagnosis, pull requests, approval, and audit.
 
-`Agentic AI-Powered Smart DevOps Assistant for Autonomous Software Delivery and Infrastructure Management`
+## 1. Demo Story
 
-## Demo Goal
+Recommended opening:
 
-Show that the system can:
+> This project is a Smart DevOps Assistant that automates repetitive CI/CD setup and failure diagnosis while keeping repository changes safe through pull requests, human approval, and audit logging.
 
-- classify CI/CD failure logs using a trained model,
-- generate GitHub Actions workflows from repository structure,
-- scan GitHub repositories,
-- create workflow setup pull requests,
-- demonstrate User -> Orchestration Agent -> Specialized Agent -> Tool/Service -> Result,
-- store workflow failure diagnosis results,
-- recommend safe fixes,
-- create fix PRs with approval where required,
-- record actions in the audit log.
+The demo should prove:
 
-## Demo Repository Requirements
+- the user can authenticate,
+- the assistant can analyze logs,
+- the assistant can inspect a GitHub repository,
+- the assistant can generate a workflow,
+- the assistant can create a workflow PR,
+- failed GitHub Actions can be diagnosed,
+- risky actions can be approved or rejected,
+- the audit trail records what happened.
 
-Use a small GitHub repository that is safe to modify during the demo.
+## 2. Demo Roles
 
-Recommended repository contents:
+Use an admin or operator account for the full demo.
 
-```text
-package.json
-package-lock.json
-src/App.jsx
-vite.config.js
-Dockerfile
-```
+Explain role behavior:
 
-Recommended repository settings:
+- viewer: read-only insight,
+- developer: diagnosis and lower-risk development operations,
+- operator: approvals and repository-changing workflows,
+- admin: full platform owner.
 
-- The repository is accessible by the configured `GITHUB_TOKEN` or installed GitHub App.
-- The token/app has Contents read/write, Pull requests read/write, Actions read.
-- The repository allows pull requests from branches created by the token/app.
-- Do not use a production repository.
-- Do not use real secrets in files or workflow logs.
+## 3. Suggested Demo Sequence
 
-Optional workflow file for fix PR demo:
-
-```yaml
-name: CI
-on: [push]
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - run: npm ci
-      - run: npm test
-```
-
-## Final Demo Command List
-
-Prepare environment:
-
-```bash
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
-```
-
-Train model:
-
-```bash
-cd backend
-venv/bin/python app/ml/train_failure_model.py
-```
-
-Start backend:
-
-```bash
-cd backend
-venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-Start frontend:
-
-```bash
-cd frontend
-npm run dev
-```
-
-Alternative Docker startup:
-
-```bash
-docker compose up -d --build
-```
-
-Open:
-
-```text
-http://localhost:5173
-```
-
-Demo login:
-
-```text
-Email: operator@devops.example.com
-Password: operator123
-```
-
-## Step 1: Introduce the Project
-
-Say:
-
-This project is an Agentic AI-Powered Smart DevOps Assistant. It reduces manual CI/CD troubleshooting by combining a trained failure classification model, repository analysis, GitHub Actions workflow generation, GitHub pull request automation, human approval, and audit logging.
+### Step 1 - Login
 
 Show:
 
-- README project title and system overview.
-- Frontend dashboard navigation.
-
-## Step 1A: Multi-Agent Architecture Demo
-
-Open:
-
-```text
-Multi-Agent
-```
-
-Explain the supervisor-required flow:
-
-```text
-User
-  -> Orchestration Agent
-  -> Specialized Agent
-  -> Tool/Service Call
-  -> Result
-  -> Audit Log / Approval if needed
-```
-
-Explain the agents:
-
-- **Orchestration Agent** receives the request, detects intent, selects one specialized agent, and returns a structured response.
-- **CLI Agent** handles Docker/container commands through the existing Docker tool.
-- **CI/CD Agent** analyzes file lists and generates GitHub Actions workflow YAML locally.
-- **Diagnosis Agent** predicts CI/CD failure labels using the trained ML model and returns fix guidance.
-- **GitHub Agent** scans repositories and prepares GitHub workflow/fix PR actions through safe GitHub services.
-
-Run the quick demo buttons:
-
-```text
-Show running containers
-Generate CI workflow for React project
-Analyze npm missing test script log
-Scan GitHub repository
-```
-
-For each result, show:
-
-- `selected_agent`
-- `intent`
-- `risk_level`
-- `success`
-- `tool_called` or proposed tool call
-- result text
-- expandable metadata JSON
-
-Sample API commands:
-
-```bash
-curl -i -sS -b /tmp/devops_demo_cookie.txt \
-  -X POST http://127.0.0.1:8000/api/v1/agent/orchestrate \
-  -H "Content-Type: application/json" \
-  -d '{"message":"show running containers","context":{}}'
-```
-
-```bash
-curl -i -sS -b /tmp/devops_demo_cookie.txt \
-  -X POST http://127.0.0.1:8000/api/v1/agent/orchestrate \
-  -H "Content-Type: application/json" \
-  -d '{"message":"generate CI workflow for React project","context":{"files":["package.json","package-lock.json","src/App.jsx","vite.config.js"]}}'
-```
-
-```bash
-curl -i -sS -b /tmp/devops_demo_cookie.txt \
-  -X POST http://127.0.0.1:8000/api/v1/agent/orchestrate \
-  -H "Content-Type: application/json" \
-  -d '{"message":"analyze this log","context":{"log_text":"npm ERR! Missing script: test"}}'
-```
-
-```bash
-curl -i -sS -b /tmp/devops_demo_cookie.txt \
-  -X POST http://127.0.0.1:8000/api/v1/agent/orchestrate \
-  -H "Content-Type: application/json" \
-  -d '{"message":"scan repository","context":{"repo_full_name":"owner/repo"}}'
-```
-
-Then run a medium-risk action:
-
-```bash
-curl -i -sS -b /tmp/devops_demo_cookie.txt \
-  -X POST http://127.0.0.1:8000/api/v1/agent/orchestrate \
-  -H "Content-Type: application/json" \
-  -d '{"message":"create workflow PR","context":{"repo_full_name":"owner/repo"}}'
-```
-
-Expected result:
-
-```text
-selected_agent: github_agent
-intent: github_create_workflow_pr
-risk_level: medium
-approval_required: true
-```
+- login page,
+- successful session,
+- protected navigation.
 
 Explain:
 
-Low-risk actions run directly. Medium/high-risk actions create a pending approval instead of modifying GitHub immediately.
+> The backend uses JWT authentication, httpOnly cookies, refresh sessions, and role-based access control.
 
-## Step 2: Train the Model
+### Step 2 - Multi-Agent Overview
 
-Run:
+Open the multi-agent page.
 
-```bash
-cd backend
-venv/bin/python app/ml/train_failure_model.py
-```
+Try a low-risk request such as repository scan or log diagnosis.
+
+Explain:
+
+> The Orchestration Agent detects intent and selects exactly one specialized agent: CI/CD, Diagnosis, GitHub, or optional CLI inspection.
+
+### Step 3 - Pasted CI/CD Failure Diagnosis
+
+Open the diagnosis page and paste a known CI/CD failure log.
+
+Expected output:
+
+- predicted label,
+- confidence,
+- suggested fix,
+- recommendation.
+
+Explain:
+
+> The model is a TF-IDF plus Logistic Regression classifier trained on CI/CD failure examples. It gives a failure category and a practical fix suggestion.
+
+### Step 4 - Repository Scan
+
+Open repository setup and scan a repository.
 
 Show:
 
-- Accuracy, precision, recall, F1-score.
-- `backend/app/ml/reports/metrics.json`
-- `backend/app/ml/reports/classification_report.txt`
-- `backend/app/ml/reports/confusion_matrix.png`
+- detected language,
+- framework,
+- package manager,
+- project directory,
+- existing workflow detection,
+- warnings,
+- readiness score,
+- recommended next actions.
 
 Explain:
 
-- Logs are converted using TF-IDF.
-- Logistic Regression predicts the failure label.
-- The fix mapping returns a suggested remediation.
+> The repository analyzer checks file paths and selected manifest contents, so it can identify package managers, test presence, monorepo folders, and existing CI workflows.
 
-## Step 3: Failure Classification Demo
+### Step 5 - Workflow PR Creation
 
-Open:
-
-```text
-CI/CD Assistant
-```
-
-Paste sample log:
-
-```text
-npm ERR! Missing script: "test"
-npm ERR!
-npm ERR! To see a list of scripts, run:
-npm ERR!   npm run
-Error: Process completed with exit code 1.
-```
-
-Click:
-
-```text
-Predict Failure
-```
-
-Expected prediction:
-
-```text
-label: npm_missing_test_script
-suggested fix: Add a test script or update the workflow to use npm test --if-present.
-```
-
-Explain:
-
-The model identifies the likely root cause from the log text and returns both a classification label and practical fix guidance.
-
-## Step 4: More Sample CI/CD Failure Logs
-
-Missing npm lockfile:
-
-```text
-Run npm ci
-npm ERR! The npm ci command can only install with an existing package-lock.json.
-npm ERR! Missing package-lock.json.
-Error: Process completed with exit code 1.
-```
-
-Expected prediction:
-
-```text
-npm_missing_lockfile
-```
-
-Pytest missing:
-
-```text
-Run pytest
-/bin/bash: line 1: pytest: command not found
-Error: Process completed with exit code 127.
-```
-
-Expected prediction:
-
-```text
-pytest_not_found
-```
-
-Python dependency missing:
-
-```text
-ModuleNotFoundError: No module named 'fastapi'
-Error: Process completed with exit code 1.
-```
-
-Expected prediction:
-
-```text
-python_missing_dependency
-```
-
-Docker build failed:
-
-```text
-Run docker build -t demo-app .
-failed to solve: failed to read dockerfile: open Dockerfile: no such file or directory
-Error: Process completed with exit code 1.
-```
-
-Expected prediction:
-
-```text
-docker_build_failed
-```
-
-Wrong runtime:
-
-```text
-The engine "node" is incompatible with this module. Expected version ">=20".
-Got "16.20.0".
-Error: Process completed with exit code 1.
-```
-
-Expected prediction:
-
-```text
-wrong_runtime_version
-```
-
-## Step 5: Workflow Generator Demo
-
-On the CI/CD Assistant page, enter:
-
-```text
-package.json
-package-lock.json
-src/App.jsx
-vite.config.js
-Dockerfile
-```
-
-Click:
-
-```text
-Generate Workflow
-```
+Create a generated CI workflow pull request.
 
 Show:
 
-- Detected stack: JavaScript / React / npm / Docker.
-- Recommended workflow: `node-ci`.
-- Generated YAML.
-- Path: `.github/workflows/ai-generated-ci.yml`.
+- branch name,
+- workflow path,
+- PR URL,
+- PR body.
 
 Explain:
 
-This is deterministic workflow generation based on repository signals, not a random LLM response.
+> The system never pushes directly to main or master. It creates a branch, commits the workflow file, and opens a pull request for review.
 
-## Step 6: Repository Scan Demo
+### Step 6 - Failed Workflow Diagnosis
 
-Open:
-
-```text
-Repository Setup
-```
-
-Enter:
-
-```text
-owner/repo
-```
-
-Click:
-
-```text
-Scan Repository
-```
+Use a failed GitHub Actions run or stored sample.
 
 Show:
 
-- Repository name.
-- Detected stack.
-- Recommended workflow.
-- File count.
+- Workflow Failures page,
+- repository,
+- workflow run ID,
+- predicted label,
+- confidence,
+- suggested fix.
 
 Explain:
 
-The backend fetches the repository tree through GitHub and runs the repository analyzer on real file paths.
+> GitHub webhooks can trigger diagnosis automatically. When possible, the backend downloads the real Actions logs before running the ML prediction.
 
-## Step 7: Workflow PR Demo
+### Step 7 - Fix PR Or Approval
 
-Click:
+For a supported failure, request a fix PR.
 
-```text
-Create Workflow PR
-```
+Show either:
+
+- a created PR, or
+- an approval request.
+
+Explain:
+
+> The system only applies selected safe fixes. Higher-risk changes wait for a human approval decision.
+
+### Step 8 - Approval Queue
+
+Open the approvals page.
 
 Show:
 
-- Created branch, for example `ai-cicd/setup-pipeline`.
-- Workflow path `.github/workflows/ai-generated-ci.yml`.
-- Pull request URL.
+- pending action,
+- tool name,
+- summary,
+- risk level,
+- approve/reject decision.
 
-Open the PR in GitHub and explain:
+Explain:
 
-- The system creates a new branch.
-- It does not push directly to `main` or `master`.
-- A human can review and merge the workflow.
+> Human-in-the-loop control prevents risky automation from silently changing repositories or infrastructure.
 
-## Step 8: Failure Diagnosis Demo
+### Step 9 - Execution/Audit History
 
-Trigger or simulate a failed GitHub Actions workflow.
-
-Expected backend flow:
-
-1. GitHub sends a `workflow_run` webhook.
-2. Backend checks action is `completed`.
-3. Backend checks conclusion is `failure`.
-4. Backend downloads real workflow logs.
-5. Logs are cleaned and redacted.
-6. Model predicts failure label and confidence.
-7. Recommendation is generated.
-8. Diagnosis is stored as a workflow failure record.
-9. Audit entries are created.
-
-Open:
-
-```text
-Workflow Failures
-```
+Open executions page.
 
 Show:
 
-- Repository.
-- Workflow name.
-- Branch.
-- Run ID.
-- Predicted label.
-- Confidence.
-- Suggested fix.
-- Workflow URL.
-- Status.
-- Log excerpt.
-
-## Step 9: Fix PR Demo
-
-On Workflow Failures, expand a diagnosed failure.
-
-If the label is supported for safe fixes, click:
-
-```text
-Create Fix PR
-```
-
-Supported first safe fixes:
-
-- `npm_missing_test_script`: change `npm test` to `npm test --if-present`.
-- `npm_missing_lockfile`: change `npm ci` to `npm install` when safe.
-- `pytest_not_found`: install pytest before running pytest.
-
-Show:
-
-- Fix branch, for example `ai-cicd/fix-{run_id}`.
-- Fix PR URL.
-- PR body explaining the failure and safety notes.
+- source,
+- status,
+- tool name,
+- actor,
+- timestamps,
+- details.
 
 Explain:
 
-Only low-risk workflow edits are applied automatically. If the system is uncertain, it returns recommendation-only.
+> Every important automation action becomes an execution record. This makes the system auditable for supervisors and operators.
 
-## Step 10: Approval Demo
+## 4. Architecture Talking Points
 
-For medium/high-risk actions, the system creates an approval request instead of creating a PR immediately.
+Use this short explanation:
 
-Open:
+> The frontend sends requests to FastAPI. FastAPI enforces auth and RBAC, then calls either route services or the Orchestration Agent. The Orchestration Agent selects one specialized agent. Services handle repository analysis, workflow generation, GitHub App tokens, ML prediction, approvals, and audit logging. Repository changes always go through pull requests.
 
-```text
-Approvals
-```
+## 5. Safety Talking Points
 
-Show approval details:
+Important points to mention:
 
-- Repository.
-- Workflow run.
-- Predicted failure.
-- Suggested fix.
-- Proposed file changes.
-- Risk level.
+- no hardcoded secrets,
+- no direct push to main/master,
+- webhook signature verification when configured,
+- role-protected endpoints,
+- human approval for risky actions,
+- audit trail,
+- secret redaction in logs.
 
-Click:
+## 6. If Something Fails During Demo
 
-```text
-Approve
-```
+Common causes:
 
-Then show:
+- GitHub token/App lacks contents or pull request permissions.
+- GitHub webhook URL is not public.
+- Repository already has the generated workflow file and overwrite was not selected.
+- Dependency graph is disabled for GitHub dependency review actions.
+- Model artifacts are missing.
+- User role does not have `executions:write`.
 
-- The fix PR is created after approval.
-- Rejection updates the workflow failure status to rejected.
+Demo-safe fallback:
 
-Explain:
+- show pasted log diagnosis,
+- show repository scan/readiness,
+- show generated YAML,
+- show stored execution/audit records,
+- explain the blocked GitHub permission as expected safety behavior.
 
-This keeps automation supervised and suitable for safe DevOps workflows.
+## 7. Recommended Closing
 
-## Step 11: Audit Log Demo
-
-Open:
-
-```text
-Audit
-```
-
-Show recent records for:
-
-- multi-agent orchestration,
-- model prediction,
-- repository scan,
-- workflow generation,
-- workflow PR creation,
-- workflow failure webhook,
-- log download,
-- fix recommendation,
-- fix PR creation,
-- approval decision.
-
-Explain:
-
-Every important agent/GitHub/model action is stored as an execution/audit record with action summary, tool name, status, actor, input summary, output summary, and timestamp.
-
-Safety explanation:
-
-- RBAC controls who can access chat, approvals, repository automation, users, and audit logs.
-- HITL approval gates medium/high-risk automation before execution.
-- Audit logging stores summarized inputs/outputs without full secrets or large raw logs.
-- GitHub repository changes use branches and pull requests, not direct pushes to `main` or `master`.
-- Tokens, private keys, credentials, and secret-looking values are redacted before logging where possible.
-
-## Step 12: Closing Summary
-
-Close with:
-
-The MVP demonstrates a safe CI/CD automation assistant. It does not replace developers or DevOps engineers. Instead, it reduces repetitive diagnosis/setup work, opens reviewable pull requests, uses human approval for risky actions, and keeps an audit trail for accountability.
-
-## Demo Troubleshooting
-
-Backend not reachable:
-
-```bash
-cd backend
-venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-Frontend points to wrong API:
-
-```bash
-cat frontend/.env
-```
-
-Expected:
-
-```text
-VITE_API_BASE_URL=http://127.0.0.1:8000
-```
-
-Model missing:
-
-```bash
-cd backend
-venv/bin/python app/ml/train_failure_model.py
-```
-
-GitHub PR fails:
-
-- Check `GITHUB_TOKEN` or GitHub App installation.
-- Check token permissions.
-- Check repository full name.
-- Check branch protection and repository access.
+> The project demonstrates a safe agentic DevOps loop: detect, recommend, generate, propose through PR, require approval when needed, and record everything for audit. It is not replacing DevOps engineers; it reduces repetitive work while keeping humans in control.

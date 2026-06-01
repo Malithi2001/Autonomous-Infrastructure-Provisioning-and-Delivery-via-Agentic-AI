@@ -1,320 +1,156 @@
-# Local Development Startup Guide
+# Startup Guide
 
-**Last Updated**: May 30, 2026  
-**Status**: ✅ All components verified and tested locally
+This guide explains how the project is configured and started for local work or demo preparation.
 
----
+## 1. Prerequisites
 
-## Quick Start (2 minutes)
+Recommended:
 
-### Prerequisites
-- Python 3.11+ installed
-- Node.js 18+ and npm installed
-- Internet connection (for LLM APIs)
+- Python 3.11
+- Node.js 18 or newer
+- npm
+- Git
 
-### Terminal 1: Backend API
-```bash
-cd backend
-python3.11 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+Optional:
+
+- Docker and Docker Compose for full local stack.
+- Redis if running background/task features outside Compose.
+- PostgreSQL or Supabase-compatible PostgreSQL for production-like testing.
+
+## 2. Environment Files
+
+Backend environment:
+
+```text
+backend/.env
 ```
 
-**Expected Output:**
-```
-Uvicorn running on http://0.0.0.0:8000
-```
+Frontend environment:
 
-**Check Health:**
-```bash
-curl http://localhost:8000/health
-# Returns: {"status":"ok","service":"Smart DevOps Assistant"}
+```text
+frontend/.env
 ```
 
-### Terminal 2: Frontend Dev Server
-```bash
-cd frontend
-npm install  # Only needed on first run
-npm run dev
+Safe examples are stored in:
+
+```text
+backend/.env.example
+frontend/.env.example
 ```
 
-**Expected Output:**
-```
-  VITE v8.0.11  ready in 123 ms
-  ➜  Local:   http://localhost:5173/
-```
+Never commit real tokens, private keys, database passwords, webhook secrets, or JWT secrets.
 
-### Terminal 3: Access UI
-Open browser: **http://localhost:5173**
+## 3. Important Backend Values
 
-**Demo Login:**
-- **Email**: viewer@company.example.com
-- **Password**: viewer123
+Minimum local demo values:
 
-**Available Pages:**
-- Chat (main agent interface)
-- Diagnosis (CI/CD failure classifier + workflow generator)
-- Approvals (HITL approval queue)
-- Executions (audit log viewer)
-- Users (admin user management)
-- Login (authentication)
-
----
-
-## API Documentation
-
-Once backend is running, visit:
-**http://localhost:8000/docs** — FastAPI Swagger UI  
-**http://localhost:8000/redoc** — ReDoc alternative
-
----
-
-## Environment Variables Required
-
-### Backend (`.env`)
-Already configured with defaults. Key variables:
-
-```bash
-# API Server
-APP_NAME="Smart DevOps Assistant"
-DEBUG=True
-ENVIRONMENT=development
-
-# Database (defaults to SQLite locally)
-# DATABASE_URL=sqlite+aiosqlite:///./devops_assistant.db
-# Or use PostgreSQL:
-# DATABASE_URL=postgresql://user:pass@localhost:5432/devops_assistant
-
-# LLM Provider (at least one required)
-OPENAI_API_KEY=sk-...          # For OpenAI GPT-4o
-ANTHROPIC_API_KEY=sk-ant-...   # For Anthropic Claude
-DEFAULT_LLM_PROVIDER=openai    # or "anthropic" or "ollama"
-DEFAULT_MODEL=gpt-4o           # Model name for selected provider
-
-# GitHub Integration (optional)
-GITHUB_TOKEN=ghp_...           # GitHub Personal Access Token
-GITHUB_WEBHOOK_SECRET=...      # Webhook signing secret
-
-# Redis (optional, for Celery background tasks)
-REDIS_URL=redis://localhost:6379/0
+```text
+DATABASE_URL=sqlite+aiosqlite:///./devops_assistant.db
+SECRET_KEY=change-this-for-local-demo
+COOKIE_SECURE=false
+COOKIE_SAMESITE=lax
+ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```
 
-### Frontend (`.env`)
-Already configured:
-```bash
-VITE_API_BASE_URL=http://localhost:8000
+GitHub local testing:
+
+```text
+GITHUB_TOKEN=
+GITHUB_REPO_FULL_NAME=
+GITHUB_WEBHOOK_SECRET=
 ```
 
----
+GitHub App testing:
 
-## Running Tests
-
-### Backend Tests
-```bash
-cd backend
-source venv/bin/activate
-
-# All tests
-python -m pytest tests -v
-
-# Specific test file
-python -m pytest tests/test_failure_prediction.py -v
-
-# With coverage report
-python -m pytest tests -v --cov=app --cov-report=html
-# Open: htmlcov/index.html
+```text
+GITHUB_APP_ID=
+GITHUB_APP_PRIVATE_KEY=
+GITHUB_APP_WEBHOOK_SECRET=
+GITHUB_APP_CLIENT_ID=
+GITHUB_APP_CLIENT_SECRET=
 ```
 
-**Test Files Available:**
-- `test_agent.py` — Agent core
-- `test_failure_prediction.py` — ML model (5 tests ✅)
-- `test_workflow_generator.py` — YAML generation (7 tests ✅)
-- `test_repo_analyzer.py` — Stack detection (5 tests ✅)
-- `test_github_tool_pr.py` — PR creation
-- `test_hitl.py` — Approval flow
-- `test_cicd_routes.py` — API endpoints
-- `test_memory_persistence.py` — Chat history
-- `test_tools_integration.py` — Tool dispatch
+Model override values are optional when artifacts exist in `backend/app/ml/`:
 
-### Frontend Build
-```bash
-cd frontend
-
-# Development server (with hot reload)
-npm run dev
-
-# Production build
-npm run build
-
-# Preview production build
-npm run preview
-
-# Linting
-npm run lint
-
-# Format code
-npm run format
+```text
+FAILURE_MODEL_PATH=
+FIX_MAPPING_PATH=
 ```
 
----
+## 4. Important Frontend Value
 
-## Docker Compose (Optional Full Stack)
-
-If you want PostgreSQL + Redis + Backend + Frontend all in Docker:
-
-```bash
-# Start all services
-docker compose up -d
-
-# View logs
-docker compose logs -f backend
-
-# Stop services
-docker compose down
-
-# Clean volumes
-docker compose down -v --rmi local
+```text
+VITE_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-**Services:**
-- `db` — PostgreSQL 15
-- `redis` — Redis 7
-- `backend` — FastAPI API
-- `celery_worker` — Background job processor
-- `flower` — Task monitoring UI (port 5555)
-- `frontend` — Nginx + React
+Use the same backend origin that the browser can reach.
 
----
+## 5. Local Startup Paths
 
-## Troubleshooting
+The Makefile contains the preferred developer commands for dependency install, backend, frontend, tests, lint, model training, and full Docker Compose startup.
 
-### Backend won't start
-```bash
-# Check Python version
-python3.11 --version  # Must be 3.11+
+For architecture and endpoint details, use:
 
-# Reinstall dependencies
-rm -rf venv
-python3.11 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 
-# Check logs for errors
-python -m uvicorn app.main:app --reload 2>&1 | head -50
+## 6. Default Admin
+
+The backend configuration contains local default admin values:
+
+```text
+DEFAULT_ADMIN_EMAIL=admin@example.com
+DEFAULT_ADMIN_USERNAME=admin
+DEFAULT_ADMIN_PASSWORD=admin123
 ```
 
-### Frontend won't build
-```bash
-# Clear cache
-rm -rf node_modules dist .vite
-npm install
-npm run build
+For any real deployment, change these values before exposing the app.
 
-# Check for TypeScript errors
-npm run lint
+## 7. GitHub Permissions
+
+For workflow PR creation, the token or GitHub App needs:
+
+- repository metadata read,
+- contents read/write,
+- pull requests read/write,
+- workflows read/write.
+
+For workflow monitoring/logs, it needs:
+
+- actions read,
+- access to the target repository.
+
+For webhook processing, GitHub must be able to reach:
+
+```text
+https://your-public-backend/api/v1/webhooks/github
 ```
 
-### Database connection fails
-```bash
-# Default is SQLite (no setup needed)
-# If using PostgreSQL, check connection:
-psql -h localhost -U devops_user -d devops_assistant
+`localhost` is not reachable from GitHub.
 
-# Or update DATABASE_URL in .env
-```
+## 8. Common Problems
 
-### "Cannot find module" errors
-```bash
-# Backend
-cd backend && source venv/bin/activate && python -m pip list | grep <package_name>
+### `401 Unauthorized` on `/auth/me`
 
-# Frontend
-cd frontend && npm list <package_name>
-```
+The browser has no valid access cookie or bearer token. Log in again or clear stale cookies.
 
-### Port already in use
-```bash
-# Backend (8000)
-lsof -i :8000
-kill -9 <PID>
+### `403 Forbidden`
 
-# Frontend (5173)
-lsof -i :5173
-kill -9 <PID>
-```
+The user is authenticated but the role lacks the required permission.
 
----
+### Repository scan fails
 
-## Development Workflow
+Check GitHub token/App installation access and repository name format `owner/repo`.
 
-### Making Code Changes
-1. **Backend**: Changes auto-reload with `--reload` flag
-2. **Frontend**: Changes auto-hot-reload in dev server
+### Workflow PR fails with insufficient permissions
 
-### Before Committing
-```bash
-# Backend
-cd backend
-source venv/bin/activate
-python -m pytest tests -v
-python -m flake8 app --max-line-length=120
+Enable contents, pull requests, and workflows write permissions on the token or GitHub App.
 
-# Frontend
-cd frontend
-npm run lint
-npm run build
-```
+### Webhook URL rejected by GitHub
 
-### Creating Pull Requests
-1. Create feature branch: `git checkout -b feature/xyz`
-2. Make changes
-3. Run tests (see above)
-4. Push and create PR
-5. Wait for code review
-6. High-risk changes require HITL approval
+Use a public HTTPS URL. GitHub cannot call `localhost`.
 
----
+### Model unavailable
 
-## Performance Notes
-
-- **API Response Time**: ~100-200ms (without LLM calls)
-- **ML Inference**: ~50-100ms (failure prediction)
-- **Frontend Build**: ~1-2s
-- **Test Suite**: ~5-10s
-
----
-
-## Next Steps
-
-### Try the Features
-1. **Login** → Use demo credentials
-2. **Chat** → Talk to the AI agent
-3. **Diagnosis** → Paste a CI/CD log, get prediction
-4. **Generate Workflow** → Enter file list, get GitHub Actions YAML
-
-### Configure for Your Use Case
-1. **GitHub Integration** → Set `GITHUB_TOKEN` in `.env`
-2. **LLM Provider** → Set `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`
-3. **Database** → Update `DATABASE_URL` for PostgreSQL
-
-### Extend the Project
-- Add new agent tools in `backend/app/tools/`
-- Add new frontend pages in `frontend/src/pages/`
-- Train ML model on custom failure patterns
-- Deploy to cloud provider (Docker image ready)
-
----
-
-## Support
-
-For issues:
-1. Check logs: `docker compose logs backend`
-2. Run tests: `pytest tests -v --tb=short`
-3. Check `.env` configuration
-4. Review AGENTS.md for development rules
-
----
-
-**Project Status**: ✅ MVP Complete | ⚠️ Admin pages incomplete | 🔧 E2E tests pending
-
+Check `backend/app/ml/failure_model.joblib` and `backend/app/ml/fix_mapping.joblib`, or configure the override paths.

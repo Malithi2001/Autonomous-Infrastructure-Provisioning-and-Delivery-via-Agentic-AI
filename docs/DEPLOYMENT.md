@@ -1,116 +1,155 @@
 # Deployment Guide
 
-## Local Development (Recommended for First Run)
+This guide explains deployment architecture and environment requirements. It is not a production hardening checklist, but it documents how the project is intended to run for local demos and controlled deployments.
 
-### Prerequisites
-- Python 3.11+
-- Node.js 20+
-- Docker Desktop (for Docker tool integration)
-- PostgreSQL 15+ (or use Docker Compose)
+## 1. Deployment Modes
 
-### Step 1 — Clone and configure
-```bash
-git clone https://github.com/your-username/devops-assistant.git
-cd devops-assistant
+The project supports three practical modes:
 
-# Set up backend env
-cp backend/.env.example backend/.env
-# Edit backend/.env: add OPENAI_API_KEY, GITHUB_TOKEN, etc.
+| Mode | Use case | Database |
+| --- | --- | --- |
+| Local lightweight | Fast demo and development | SQLite |
+| Local full stack | Demo with containers, Redis, worker, database | PostgreSQL through Docker Compose |
+| Hosted backend/frontend | More realistic deployment | PostgreSQL or Supabase-compatible database |
 
-# Set up frontend env
-cp frontend/.env.example frontend/.env
+The core CI/CD features do not require Docker. Docker Compose is only a convenient way to run the full app stack together.
+
+## 2. Runtime Components
+
+```mermaid
+flowchart TB
+    Browser[Browser] --> Frontend[React Frontend]
+    Frontend --> Backend[FastAPI Backend]
+    Backend --> DB[(Database)]
+    Backend --> Redis[(Redis)]
+    Redis --> Worker[Celery Worker]
+    Redis --> Flower[Flower Monitoring UI]
+    Backend --> GitHub[GitHub API]
+    GitHub --> Webhook[Webhook Callback]
+    Webhook --> Backend
 ```
 
-### Step 2 — Start with Docker Compose
-```bash
-docker compose up --build
+Required for the main MVP:
+
+- backend,
+- frontend,
+- database,
+- GitHub token or GitHub App credentials for real repository actions,
+- trained model artifacts.
+
+Optional:
+
+- Redis,
+- Celery worker,
+- Flower,
+- Docker socket for local container inspection.
+
+## 3. Important Environment Variables
+
+Backend:
+
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | SQLAlchemy database URL. |
+| `SECRET_KEY` | JWT signing secret. Must be strong outside local demo. |
+| `ALLOWED_ORIGINS` | Comma-separated or JSON list of frontend origins. |
+| `COOKIE_SECURE` | Should be true behind HTTPS. |
+| `COOKIE_SAMESITE` | `lax`, `strict`, or `none`. |
+| `REDIS_URL` | Redis URL for memory/task support. |
+| `CELERY_BROKER_URL` | Celery broker URL. Falls back to Redis URL if configured by compose. |
+| `CELERY_RESULT_BACKEND` | Celery result backend. |
+| `GITHUB_TOKEN` | PAT fallback for local testing. |
+| `GITHUB_APP_ID` | GitHub App ID for installation tokens. |
+| `GITHUB_APP_PRIVATE_KEY` | GitHub App private key. |
+| `GITHUB_APP_WEBHOOK_SECRET` | Secret used to verify GitHub App webhooks. |
+| `GITHUB_WEBHOOK_SECRET` | Legacy/shared webhook secret fallback. |
+| `FAILURE_MODEL_PATH` | Optional override for model artifact path. |
+| `FIX_MAPPING_PATH` | Optional override for fix mapping path. |
+| `ENABLE_HITL` | Enables human approval gates. |
+
+Frontend:
+
+| Variable | Purpose |
+| --- | --- |
+| `VITE_API_BASE_URL` | Backend base URL. |
+
+## 4. GitHub App Requirements
+
+For production-style repository access, use a GitHub App installation.
+
+Recommended repository permissions:
+
+- Metadata: read-only.
+- Contents: read and write.
+- Pull requests: read and write.
+- Actions: read and write if workflow run actions are needed.
+- Workflows: read and write for workflow file updates.
+
+Recommended events:
+
+- `workflow_run`
+- `installation`
+- `installation_repositories`
+
+Webhook URL shape:
+
+```text
+https://your-backend-domain/api/v1/webhooks/github
 ```
 
-Services started:
-- PostgreSQL on port 5432
-- Redis on port 6379
-- FastAPI backend on http://localhost:8000
-- React frontend on http://localhost:5173
+Localhost is not publicly reachable by GitHub. For local webhook testing, expose the backend through a secure tunnel and use that public URL.
 
-### Step 3 — Create your first admin user
-```bash
-curl -X POST http://localhost:8000/api/v1/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@example.com","username":"admin","password":"Admin@1234"}'
-```
+## 5. Database Notes
 
-Then manually update the role to `admin` in the database:
-```sql
-UPDATE users SET role = 'admin' WHERE username = 'admin';
-```
+The app can auto-create tables through startup initialization for local/demo use.
 
----
+Main tables:
 
-## AWS EC2 Deployment
+- `users`
+- `user_sessions`
+- `chat_messages`
+- `approval_requests`
+- `executions`
+- `workflow_failures`
+- `repository_installations`
+- `automation_rules`
 
-### Step 1 — Provision EC2 instance
-- Instance type: `t3.medium` (minimum), `t3.large` recommended
-- AMI: Ubuntu 22.04 LTS
-- Security Group: Open ports 22 (SSH), 80 (HTTP), 443 (HTTPS), 8000 (API)
+For a production-like deployment, use proper database migrations and backups.
 
-### Step 2 — Install Docker on EC2
-```bash
-sudo apt update && sudo apt install -y docker.io docker-compose-plugin git
-sudo usermod -aG docker $USER
-newgrp docker
-```
+## 6. Security Checklist
 
-### Step 3 — Clone and deploy
-```bash
-git clone https://github.com/your-username/devops-assistant.git
-cd devops-assistant
-cp backend/.env.example backend/.env
-nano backend/.env  # Add production credentials
+Before any public deployment:
 
-docker compose up -d --build
-```
+- Replace default admin credentials.
+- Use a strong `SECRET_KEY`.
+- Enable HTTPS.
+- Set `COOKIE_SECURE=true`.
+- Restrict `ALLOWED_ORIGINS`.
+- Use GitHub App installation tokens instead of broad PATs.
+- Store secrets in the deployment secret manager.
+- Keep `ENABLE_HITL=true`.
+- Do not mount Docker socket unless local infrastructure inspection is required.
+- Review logs to confirm secrets are redacted.
 
-### Step 4 — Configure GitHub webhook (for self-healing)
-In your app repository:
-- Settings → Webhooks → Add webhook
-- Payload URL: `http://<EC2_IP>:8000/api/v1/webhooks/github`
-- Content type: `application/json`
-- Events: Workflow runs, Pushes
+## 7. Model Artifacts
 
----
+The backend expects model artifacts under `backend/app/ml/` unless environment variables override them.
 
-## GitHub Actions CI/CD
+Required runtime artifacts:
 
-Add these secrets to your repository (Settings → Secrets → Actions):
+- `failure_model.joblib`
+- `fix_mapping.joblib`
 
-| Secret | Description |
-|--------|-------------|
-| `OPENAI_API_KEY` | OpenAI API key for tests |
-| `AWS_ACCESS_KEY_ID` | AWS credentials for ECR/EC2 |
-| `AWS_SECRET_ACCESS_KEY` | AWS credentials |
-| `AWS_DEFAULT_REGION` | e.g. `us-east-1` |
-| `EC2_HOST` | EC2 public IP or hostname |
-| `EC2_USER` | SSH user (e.g. `ubuntu`) |
-| `EC2_SSH_KEY` | Private SSH key content |
+If the artifacts are unavailable, prediction endpoints return service-unavailable style errors instead of silently guessing.
 
-The CI pipeline (`.github/workflows/ci.yml`) runs on every push:
-1. Backend lint + pytest
-2. Frontend lint + build
-3. Docker Compose build verification
+## 8. Scaling Notes
 
-The CD pipeline (`.github/workflows/deploy.yml`) runs on merge to `main`:
-1. Builds and pushes Docker images to ECR
-2. SSH deploys to EC2
+For a stronger deployment:
 
----
-
-## Environment Variables Reference
-
-See `backend/.env.example` for full reference with descriptions.
-
-**Minimum required for local dev:**
-```env
-SECRET_KEY=any-random-string-32-chars
-OPENAI_API_KEY=sk-...
-DATABASE_URL=postgresql://devops_user:devops_pass@localhost:5432/devops_assistant
-```
+- run multiple backend workers behind a reverse proxy,
+- use PostgreSQL instead of SQLite,
+- use Redis-backed memory,
+- move long-running GitHub log downloads to Celery,
+- use object storage for larger log artifacts,
+- monitor error rates and webhook delivery failures,
+- add database migrations for schema changes.

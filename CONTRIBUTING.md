@@ -1,70 +1,103 @@
 # Contributing Guide
 
-Thank you for contributing to the Smart DevOps Assistant!
+This project is a final-year DevOps automation system. Changes should keep the MVP stable, explainable, and safe.
 
-## Development Setup
+## 1. Development Principles
 
-```bash
-git clone https://github.com/your-username/devops-assistant.git
-cd devops-assistant
+- Keep route handlers thin.
+- Put business logic in `backend/app/services/`.
+- Put agent logic in `backend/app/agents/`.
+- Put low-level integrations in `backend/app/tools/`.
+- Reuse existing services before adding new abstractions.
+- Do not weaken auth, RBAC, approvals, or webhook signature checks.
+- Do not hardcode secrets.
+- Do not log tokens, passwords, private keys, or secret-bearing environment variables.
+- Keep GitHub repository changes branch-and-PR based.
+
+## 2. Backend Guidelines
+
+Backend layout:
+
+```text
+backend/app/api/routes/   FastAPI endpoints
+backend/app/agents/       Orchestration and specialized agents
+backend/app/services/     Business logic
+backend/app/tools/        GitHub, Docker, shell, monitoring integrations
+backend/app/models/       SQLAlchemy ORM models
+backend/app/schemas/      Pydantic contracts
+backend/app/core/         Config, security, database, logging
 ```
 
-### Backend
-```bash
-cd backend
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env   # fill in your credentials
-uvicorn app.main:app --reload
+Rules:
+
+- Use async SQLAlchemy sessions for database access.
+- Use Pydantic schemas for stable API contracts.
+- Use `require_permission(...)` for protected endpoints.
+- Use structured logging.
+- Keep sensitive data out of logs.
+- Add tests when changing behavior.
+
+## 3. Frontend Guidelines
+
+Frontend layout:
+
+```text
+frontend/src/pages/       Screens
+frontend/src/components/  Reusable UI
+frontend/src/services/    API client
+frontend/src/store/       Zustand state
+frontend/src/types/       Shared TypeScript types
+frontend/src/lib/         RBAC/util helpers
 ```
 
-### Frontend
-```bash
-cd frontend
-npm install
-cp .env.example .env
-npm run dev
-```
+Rules:
 
-## Branching Strategy
+- Use existing layout and UI conventions.
+- Handle loading, empty, success, and error states.
+- Never expose backend secrets in frontend code.
+- Do not store GitHub tokens in browser state.
+- Keep RBAC checks in the frontend for UX only; backend permission checks are required.
 
-- `main` — production-ready, protected
-- `develop` — integration branch
-- `feature/<name>` — new features
-- `fix/<name>` — bug fixes
-- `docs/<name>` — documentation updates
+## 4. Agent Guidelines
 
-## Commit Convention
+- The Orchestration Agent should select one specialized agent for the main task.
+- Specialized agents should call services/tools, not duplicate logic.
+- Return `AgentResult` from deterministic agents.
+- Add approval plans for medium/high-risk actions.
+- Do not use LLM-only judgment for risky actions.
 
-Follow [Conventional Commits](https://www.conventionalcommits.org/):
+## 5. GitHub Safety
 
-```
-feat: add AWS Lambda tool integration
-fix: correct RBAC permission check for staging deployments
-docs: update ARCHITECTURE.md with session pool diagram
-test: add coverage for github_tool.py
-refactor: extract approval logic into ApprovalService
-```
+Repository modifications must follow:
 
-## Pull Request Checklist
+1. Create branch.
+2. Commit intended file.
+3. Open pull request.
+4. Wait for human review.
 
-- [ ] Tests pass locally (`pytest tests/`)
-- [ ] Frontend builds (`npm run build`)
-- [ ] New tools have description strings and are registered in `tools_registry.py`
-- [ ] Sensitive env vars are in `.env.example` with placeholder values
-- [ ] Code follows existing patterns (async/await in backend, typed React in frontend)
+Do not:
 
-## Code Style
+- push directly to `main` or `master`,
+- force push,
+- auto-merge,
+- delete branches automatically,
+- print tokens.
 
-**Backend:** PEP8, max line length 120, `flake8` enforced in CI
-**Frontend:** ESLint + Prettier, TypeScript strict mode
+## 6. Documentation
 
-## Testing
+When behavior changes, update:
 
-```bash
-# Backend
-cd backend && pytest tests/ -v
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/AGENT_DESIGN.md](docs/AGENT_DESIGN.md)
+- [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
+- demo/evaluation docs if the UI flow changes.
 
-# Frontend
-cd frontend && npm run lint && npm run build
-```
+## 7. Quality Checks
+
+Before presenting or merging changes, verify:
+
+- backend tests,
+- backend lint/type checks where configured,
+- frontend build,
+- frontend lint where configured,
+- docs do not contain real secrets.
