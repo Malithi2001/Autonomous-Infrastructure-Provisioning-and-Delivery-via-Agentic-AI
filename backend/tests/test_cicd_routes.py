@@ -32,6 +32,12 @@ def test_analyze_files_recommends_node_react_workflow_without_auth():
         "has_docker": True,
         "has_existing_workflows": False,
         "recommended_workflow": "node-ci",
+        "project_dir": ".",
+        "detected_projects": [
+            {"type": "docker", "path": ".", "framework": "docker", "package_manager": "unknown"},
+            {"type": "node", "path": ".", "framework": "react", "package_manager": "npm"},
+        ],
+        "ci_warnings": [],
     }
 
 
@@ -47,6 +53,7 @@ def test_generate_workflow_returns_stack_path_and_valid_yaml_without_auth():
     assert body["stack"]["language"] == "python"
     assert body["stack"]["framework"] == "fastapi"
     assert body["stack"]["recommended_workflow"] == "python-ci"
+    assert body["stack"]["project_dir"] == "."
     assert body["path"] == ".github/workflows/ai-generated-ci.yml"
     assert "actions/setup-python@v5" in body["workflow_yaml"]
     assert "python-version: '3.11'" in body["workflow_yaml"]
@@ -101,4 +108,4 @@ def test_generate_workflow_returns_docker_workflow_without_github_calls():
     assert "docker build -t ai-generated-app ." in body["workflow_yaml"]
 
     parsed = yaml.safe_load(body["workflow_yaml"])
-    assert parsed["jobs"]["docker-ci"]["steps"][1]["run"] == "docker build -t ai-generated-app ."
+    assert "docker build -t ai-generated-app ." in parsed["jobs"]["docker-ci"]["steps"][1]["run"]

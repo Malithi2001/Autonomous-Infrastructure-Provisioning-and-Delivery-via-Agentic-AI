@@ -98,6 +98,40 @@ def test_orchestration_agent_routes_repository_request_to_github_agent():
     assert result.metadata["repo_full_name"] == "octo-org/demo-app"
 
 
+def test_orchestration_agent_extracts_repo_and_overwrite_for_workflow_pr():
+    github_agent = _agent(
+        selected_agent="github_agent",
+        intent="github_create_workflow_pr",
+        result="Created workflow PR.",
+        metadata={"repo_full_name": "octo-org/demo-app"},
+    )
+    task = AgentTask(message="create workflow PR for https://github.com/octo-org/demo-app and overwrite existing")
+
+    result = OrchestrationAgent(github_agent=github_agent).handle(task)
+
+    assert result.selected_agent == "github_agent"
+    assert github_agent.received_task is not None
+    assert github_agent.received_task.context["repo_full_name"] == "octo-org/demo-app"
+    assert github_agent.received_task.context["overwrite_existing_workflow"] is True
+
+
+def test_orchestration_agent_routes_workflow_run_diagnosis_to_github_agent():
+    github_agent = _agent(
+        selected_agent="github_agent",
+        intent="github_diagnose_workflow_run",
+        result="Diagnosed workflow run.",
+        metadata={"run_id": 12345},
+    )
+    task = AgentTask(message="diagnose workflow run 12345 for octo-org/demo-app")
+
+    result = OrchestrationAgent(github_agent=github_agent).handle(task)
+
+    assert result.selected_agent == "github_agent"
+    assert github_agent.received_task is not None
+    assert github_agent.received_task.context["repo_full_name"] == "octo-org/demo-app"
+    assert github_agent.received_task.context["run_id"] == 12345
+
+
 def test_orchestration_agent_routes_fix_pr_request_to_github_agent():
     github_agent = _agent(
         selected_agent="github_agent",

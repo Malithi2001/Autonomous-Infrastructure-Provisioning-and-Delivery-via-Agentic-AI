@@ -1,286 +1,275 @@
 # System Architecture
 
-## Overview
+This document describes the current architecture of the Smart DevOps Assistant. It is written from the live codebase, not from the original proposal.
 
-The Smart DevOps Assistant is a modular, full-stack system built on four main layers:
+## 1. Purpose
 
-1. **Frontend** — React/Vite dashboard (chat UI, multi-agent demo, CI/CD assistant, HITL approvals, audit logs)
-2. **Backend** — FastAPI REST API (auth, RBAC, deterministic agent routing, audit logging)
-3. **Agent Core** — Orchestration Agent plus specialized agents for CLI, CI/CD, diagnosis, and GitHub workflows
-4. **Tools and Services** — Docker, repository analyzer, workflow generator, ML prediction, GitHub REST API
+The system is a CI/CD automation assistant with safety controls. Its main job is to help a user:
 
----
+- inspect a repository,
+- detect the stack and CI/CD readiness,
+- generate GitHub Actions workflow YAML,
+- create workflow pull requests safely,
+- diagnose failed CI/CD logs,
+- recommend fixes,
+- create selected fix pull requests,
+- require human approval for risky actions,
+- keep an audit trail.
 
-## Layer Detail
+Docker and shell capabilities exist only as optional local infrastructure inspection tools. They are not required for the core GitHub CI/CD workflow.
 
-### 1. Frontend (React 18 + Vite + Tailwind)
+## 2. High-Level View
 
-```
-src/
-├── pages/
-│   ├── ChatPage.tsx        # Main chat interface with streaming messages
-│   ├── MultiAgentPage.tsx  # Supervisor demo for orchestration and specialized agents
-│   ├── DiagnosisPage.tsx   # CI/CD failure prediction and workflow generation
-│   ├── RepositorySetupPage.tsx # Repository scan and workflow PR flow
-│   ├── WorkflowFailuresPage.tsx # Stored GitHub Actions failure diagnosis
-│   ├── ApprovalsPage.tsx   # HITL approval queue for operators
-│   ├── ExecutionsPage.tsx  # Audit log / execution history
-│   └── LoginPage.tsx       # JWT authentication
-├── store/
-│   ├── authStore.ts        # Zustand auth state (persisted)
-│   └── chatStore.ts        # Conversation messages & session state
-├── services/
-│   └── api.ts              # Axios-based API layer with token injection
-└── components/
-    └── layout/Layout.tsx   # Sidebar navigation
-```
+```mermaid
+flowchart LR
+    User[User / Supervisor] --> Frontend[React Frontend]
+    Frontend --> Backend[FastAPI Backend]
 
-### 2. Backend (FastAPI + SQLAlchemy + Async PostgreSQL)
+    Backend --> Auth[Auth + RBAC]
+    Backend --> Routes[API Routes]
+    Routes --> Agents[Multi-Agent Layer]
+    Routes --> Services[Service Layer]
+    Routes --> DB[(Database)]
+    Routes --> Redis[(Redis)]
 
-```
-app/
-├── api/routes/
-│   ├── agent.py        # POST /api/v1/agent/chat and /api/v1/agent/orchestrate
-│   ├── auth.py         # POST /api/v1/auth/login|register
-│   ├── cicd.py         # Repository file analysis and workflow YAML generation
-│   ├── repositories.py # GitHub repository scan and workflow PR APIs
-│   ├── workflow_failures.py # Persisted failure diagnosis and fix PR API
-│   ├── approvals.py    # GET/POST /api/v1/approvals — HITL gate
-│   ├── executions.py   # GET /api/v1/audit and execution detail APIs
-│   ├── webhooks.py     # POST /api/v1/webhooks/github — CI/CD events
-│   └── health.py       # GET /health
-├── core/
-│   ├── config.py       # Pydantic Settings (env vars)
-│   ├── database.py     # Async SQLAlchemy engine + session
-│   ├── security.py     # JWT, bcrypt, RBAC permission matrix
-│   └── logging.py      # Structured JSON logging (structlog)
-├── models/models.py    # DB schema: User, Execution, ApprovalRequest, WorkflowFailure, RepositoryInstallation
-└── schemas/schemas.py  # Pydantic I/O validation schemas
+    Agents --> CLI[CLI Agent]
+    Agents --> CICD[CI/CD Agent]
+    Agents --> Diagnosis[Diagnosis Agent]
+    Agents --> GitHubAgent[GitHub Agent]
+
+    Services --> RepoAnalyzer[Repository Analyzer]
+    Services --> WorkflowGenerator[Workflow Generator]
+    Services --> Readiness[CI/CD Readiness]
+    Services --> ML[Failure Prediction Model]
+    Services --> Fixes[Fix Recommendation + Fix PR]
+    Services --> HITL[Human Approval]
+    Services --> Audit[Audit Logging]
+
+    GitHubAgent --> GitHub[GitHub API]
+    GitHub --> Webhook[GitHub Webhooks]
+    Webhook --> Routes
 ```
 
-### 3. Agent Core
+## 3. Frontend Architecture
 
-```
-agents/
-├── agent_types.py          # AgentTask and AgentResult shared Pydantic models
-├── orchestration_agent.py  # Deterministic router for specialized agents
-├── cli_agent.py            # Docker/container operations through Docker tool
-├── cicd_agent.py           # Repo analysis and workflow YAML generation
-├── diagnosis_agent.py      # ML failure prediction and fix recommendation
-├── github_agent.py         # GitHub scan, workflow PR, workflow trigger, fix PR
-├── devops_agent.py         # Existing chat agent/session pool
-└── tools_registry.py       # Role-filtered tool list builder
+Location: `frontend/src/`
 
-tools/
-├── docker_tool.py      # Docker SDK integration (list, logs, restart, run)
-├── github_tool.py      # GitHub REST integration (repo tree, logs, workflows, branches, files, PRs)
-├── shell_tool.py       # Allowlisted shell commands only
-└── monitoring_tool.py  # psutil metrics + HTTP health checks
-```
+The frontend is a React + Vite + TypeScript application. It provides the demo and operator interface for the system.
 
-### 4. Multi-Agent Architecture
+Main screens:
 
-The supervisor-required multi-agent path is deterministic and easy to test:
+| Page | Purpose |
+| --- | --- |
+| `LoginPage.tsx` | User login and session creation. |
+| `ChatPage.tsx` | Legacy chat agent interface. |
+| `MultiAgentPage.tsx` | Deterministic multi-agent supervisor demo. |
+| `DiagnosisPage.tsx` | Paste CI/CD logs and receive failure prediction. |
+| `RepositorySetupPage.tsx` | Scan GitHub repo, view readiness, create workflow PR. |
+| `WorkflowFailuresPage.tsx` | View failed GitHub Actions diagnoses and create fix PRs. |
+| `ApprovalsPage.tsx` | Review and decide pending human approvals. |
+| `ExecutionsPage.tsx` | Audit trail and execution history. |
+| `UsersPage.tsx` | Admin user management. |
 
-```text
-User
-  -> Orchestration Agent
-  -> Specialized Agent
-  -> Tool/Service Call
-  -> Result
-  -> Audit Log / Approval if needed
-```
+Important frontend modules:
 
-The API entry point is:
+- `services/api.ts`: centralized Axios API client.
+- `store/authStore.ts`: user session and authentication state.
+- `store/chatStore.ts`: chat session state.
+- `store/themeStore.ts`: theme state.
+- `lib/rbac.ts`: frontend role visibility helpers.
+- `components/layout/Layout.tsx`: authenticated app shell and navigation.
 
-```text
-POST /api/v1/agent/orchestrate
-```
+The frontend does not store GitHub tokens. Repository access is handled by the backend.
 
-Agent responsibilities:
+## 4. Backend API Architecture
 
-| Agent | Responsibility | Example request | Tool/service |
-| --- | --- | --- | --- |
-| Orchestration Agent | Detects intent and selects one specialized agent | `show running containers` | Specialized agent router |
-| CLI Agent | Safe Docker/container operations | `docker ps` | `docker_tool.list_containers` |
-| CI/CD Agent | File-list stack detection and local workflow generation | `generate CI workflow for React project` | `repo_analyzer`, `workflow_generator` |
-| Diagnosis Agent | CI/CD log classification and fix recommendation | `analyze this log` | `failure_prediction_service`, `fix_recommendation_service` |
-| GitHub Agent | GitHub repo scan, workflow PR, workflow trigger, fix PR | `scan repository owner/repo` | `github_tool`, `fix_pr_service` |
+Location: `backend/app/`
 
-Routing examples:
+The backend is a FastAPI application with route modules organized by domain.
 
-```text
-show running containers
-  -> cli_agent
-  -> docker_list_containers
-  -> low risk
-```
+| Route module | Prefix | Responsibility |
+| --- | --- | --- |
+| `health.py` | `/health` | Health checks. |
+| `auth.py` | `/api/v1/auth` | Login, register, refresh, logout, users, roles. |
+| `agent.py` | `/api/v1/agent` | Legacy chat, multi-agent orchestration, WebSocket chat. |
+| `cicd.py` | `/api/v1/cicd` | Offline file-list analysis and workflow YAML generation. |
+| `repositories.py` | `/api/v1/repositories` | GitHub repo scan, installed repos, workflow PR creation. |
+| `model.py` | `/api/v1/model` | CI/CD failure prediction. |
+| `webhooks.py` | `/api/v1/webhooks` | GitHub App and workflow-run webhook events. |
+| `workflow_failures.py` | `/api/v1/workflow-failures` | Stored workflow failure diagnoses and fix PR creation. |
+| `approvals.py` | `/api/v1/approvals` | Human approval queue and decisions. |
+| `executions.py` | `/api/v1/executions`, `/api/v1/audit` | Execution and audit history. |
 
-```text
-generate CI workflow for React project
-  -> cicd_agent
-  -> cicd_generate_workflow
-  -> low risk
-```
+Routes are intentionally thin. They validate requests, enforce RBAC, call services or agents, and return Pydantic response models.
 
-```text
-analyze this log: npm ERR! Missing script test
-  -> diagnosis_agent
-  -> cicd_failure_diagnosis
-  -> low risk
-```
+## 5. Multi-Agent Architecture
 
-```text
-scan repository owner/repo
-  -> github_agent
-  -> github_scan_repository
-  -> low risk
-```
+Location: `backend/app/agents/`
 
-```text
-create workflow PR
-  -> github_agent
-  -> github_create_workflow_pr
-  -> medium risk
-  -> pending approval before execution
+The multi-agent path is deterministic. The Orchestration Agent receives a task, scores possible intents, extracts context, selects one specialized agent, and returns an `AgentResult`.
+
+```mermaid
+sequenceDiagram
+    participant UI as Frontend
+    participant API as /api/v1/agent/orchestrate
+    participant O as Orchestration Agent
+    participant A as Specialized Agent
+    participant S as Service or Tool
+    participant DB as Database
+
+    UI->>API: message + context
+    API->>O: AgentTask
+    O->>O: Extract repo, run id, branch, logs, container name
+    O->>O: Score CLI, CI/CD, Diagnosis, GitHub routes
+    O->>A: Delegate to one agent
+    A->>S: Execute supported service/tool call
+    S->>DB: Store audit/domain record where needed
+    S-->>A: Result
+    A-->>O: AgentResult
+    O-->>API: Structured result
+    API-->>UI: Response
 ```
 
-### 5. Chat Agent Data Flow
+Agents:
 
-```
-User types message
-       ↓
-[Frontend ChatPage]
-       ↓  POST /api/v1/agent/chat
-[FastAPI backend]
-  → JWT validated
-  → RBAC permission check (agent:chat)
-  → Execution record created (status: pending)
-       ↓
-[LangChain AgentExecutor]
-  → LLM reads system prompt + conversation history
-  → LLM generates action plan
-  → Checks risk level of action
-       ↓
-  If HIGH/CRITICAL risk:
-    → Creates ApprovalRequest in DB
-    → Returns "requires_approval: true" to frontend
-    → Frontend shows approval banner
-    → Operator approves/rejects via ApprovalsPage
-  If LOW/MEDIUM risk:
-    → Calls appropriate tool (Docker/GitHub/Shell/Monitor)
-    → Tool executes real action
-    → Result returned to LLM
-    → LLM summarizes result for user
-       ↓
-[Execution record updated: status, result, completed_at]
-[AuditLog entry created]
-       ↓
-Response streamed back to frontend
-```
+- `OrchestrationAgent`: deterministic routing and context extraction.
+- `CICDAgent`: stack detection and offline GitHub Actions YAML generation.
+- `DiagnosisAgent`: CI/CD failure log classification and recommendation.
+- `GitHubAgent`: GitHub repository scan, workflow actions, log download, fix PR path.
+- `CLIAgent`: optional safe local container inspection, currently list containers and read logs.
+- `DevOpsAgent`: legacy LangChain chat agent kept for compatibility.
 
-### 6. CI/CD Automation Data Flow
+## 6. Service Layer
 
-```text
-GitHub workflow_run webhook
-       ↓
-FastAPI webhook route
-       ↓
-Download GitHub Actions logs
-       ↓
-Clean, truncate, and redact logs
-       ↓
-Failure prediction model
-       ↓
-Fix recommendation service
-       ↓
-WorkflowFailure record
-       ↓
-Audit log entry
-       ↓
-Frontend Workflow Failures page
-```
+Location: `backend/app/services/`
 
----
+Services contain business logic:
 
-## Security Architecture
+| Service | Responsibility |
+| --- | --- |
+| `repo_analyzer.py` | Detect stack, framework, package manager, project directories, existing workflows, CI warnings. |
+| `workflow_generator.py` | Generate GitHub Actions YAML for Node, Python, Java, Docker, generic, and multi-project repos. |
+| `cicd_readiness_service.py` | Score CI/CD readiness and produce strengths, findings, and next actions. |
+| `failure_prediction_service.py` | Lazy-load model artifacts and predict failure label, confidence, suggested fix. |
+| `fix_recommendation_service.py` | Build practical fix recommendations from predicted label and repo context. |
+| `workflow_failure_service.py` | Store and list GitHub Actions failure diagnosis records. |
+| `fix_pr_service.py` | Create selected safe fix PRs or pending approval records. |
+| `github_app_service.py` | GitHub App JWT, installation tokens, installed repo records, webhook signature verification. |
+| `hitl_service.py` | Approval request helpers. |
+| `audit_service.py` | Execution/audit records with sensitive value redaction. |
+| `memory_service.py` | Persistent chat history abstraction. |
+| `execution_service.py` | Execution lifecycle helpers. |
+| `ws_manager.py` | WebSocket connection management helper. |
 
-### RBAC Permission Matrix
+## 7. Tool Layer
 
-| Permission | Viewer | Developer | Operator | Admin |
-|------------|--------|-----------|----------|-------|
-| logs:read | ✅ | ✅ | ✅ | ✅ |
-| agent:chat | ✅ | ✅ | ✅ | ✅ |
-| deployments:staging | ❌ | ✅ | ✅ | ✅ |
-| deployments:production | ❌ | ❌ | ✅ | ✅ |
-| infrastructure:write | ❌ | ❌ | ✅ | ✅ |
-| * (all) | ❌ | ❌ | ❌ | ✅ |
+Location: `backend/app/tools/`
 
-### HITL (Human-in-the-Loop) Flow
+Tools isolate integrations:
 
-```
-Agent identifies MEDIUM/HIGH risk action
-         ↓
-Creates ApprovalRequest (status: pending, expires: +5min)
-         ↓
-Execution paused → frontend notified
-         ↓
-Operator sees alert in ApprovalsPage
-         ↓
-    APPROVE → execution resumes
-    REJECT  → execution cancelled, user notified
-    TIMEOUT → execution auto-cancelled
-```
+| Tool | Responsibility |
+| --- | --- |
+| `github_tool.py` | Repository tree, analysis snapshots, logs, workflows, branches, files, pull requests. |
+| `docker_tool.py` | Optional local container inspection and controlled container operations. |
+| `monitoring_tool.py` | Local process, metrics, and HTTP health checks. |
+| `shell_tool.py` | Strict allowlisted shell command execution. |
 
-Safety controls:
+The core CI/CD flow depends on GitHub tooling, not Docker.
 
-- RBAC limits API access by role and permission.
-- Low-risk actions such as local workflow generation, log diagnosis, repository scanning, and container listing can run directly.
-- Medium-risk actions such as workflow PR creation, fix PR creation, and workflow triggering create a pending approval first.
-- High-risk production deployment or destructive actions are not implemented in the MVP.
-- GitHub repository modifications happen through a new branch and pull request, never a direct push to `main` or `master`.
-- Audit logging records selected agent, intent, risk level, tool/service, status, and summarized result.
-- Secrets, tokens, private keys, credentials, and very large logs are redacted or summarized before audit logging where possible.
+## 8. Data Model
 
----
+Location: `backend/app/models/models.py`
 
-## Database Schema (ERD Summary)
+Main tables:
 
-```
-users               executions              approval_requests
-─────────────       ──────────────────      ─────────────────────
-id (UUID PK)        id (UUID PK)            id (UUID PK)
-email               user_id (FK→users)      execution_id (FK)
-username            session_id              requested_by_id (FK)
-hashed_password     command                 approved_by_id (FK)
-role (enum)         action_plan (JSON)      description
-is_active           tool_used               status (enum)
-created_at          result                  expires_at
-                    status (enum)           decided_at
-                    risk_level              decision_note
-                    created_at              created_at
-                    completed_at
+| Model | Purpose |
+| --- | --- |
+| `User` | User account with email, username, password hash, role, active flag. |
+| `UserSession` | Refresh token session tracking. |
+| `ChatMessage` | Persistent chat memory by session. |
+| `ApprovalRequest` | Pending, approved, rejected, or timed-out human approval requests. |
+| `Execution` | Audit history for API, agent, webhook, and approval actions. |
+| `WorkflowFailure` | Stored diagnosis for failed GitHub Actions workflow runs. |
+| `RepositoryInstallation` | GitHub App installation to repository mapping. |
+| `AutomationRule` | Future automation policy model. |
 
-audit_logs
-──────────────────
-id (int PK)
-user_id
-event_type
-event_data (JSON)
-ip_address
-timestamp
+## 9. CI/CD Repository Setup Flow
+
+```mermaid
+sequenceDiagram
+    participant UI as Repository Setup Page
+    participant API as Repository API
+    participant GH as GitHub API
+    participant Analyzer as Repo Analyzer
+    participant Ready as Readiness Service
+    participant Gen as Workflow Generator
+    participant DB as Database
+
+    UI->>API: Scan repository
+    API->>GH: Fetch tree and selected manifest files
+    GH-->>API: File paths and analysis inputs
+    API->>Analyzer: detect_stack
+    Analyzer-->>API: stack + warnings
+    API->>Ready: assess_cicd_readiness
+    Ready-->>API: score + findings
+    API->>DB: Audit repository analysis
+    API-->>UI: scan result
+
+    UI->>API: Create workflow PR
+    API->>GH: Create branch
+    API->>Gen: Generate workflow YAML
+    Gen-->>API: Validated YAML
+    API->>GH: Commit workflow file and open PR
+    API->>DB: Audit PR creation
+    API-->>UI: PR URL
 ```
 
----
+## 10. Failure Diagnosis Flow
 
-## Technology Decisions
+```mermaid
+flowchart TD
+    A[GitHub workflow_run completed] --> B{Conclusion failure?}
+    B -->|No| C[Ignore safely]
+    B -->|Yes| D[Download Actions logs]
+    D --> E[Clean and limit log excerpt]
+    E --> F[Failure Prediction Service]
+    F --> G[Fix Recommendation Service]
+    G --> H[WorkflowFailure table]
+    H --> I[Workflow Failures UI]
+    I --> J[Optional fix PR]
+    J --> K[Approval if required]
+    K --> L[Branch + Commit + Pull Request]
+```
 
-| Decision | Choice | Reason |
-|----------|--------|--------|
-| AI Framework | LangChain | Mature, production-ready, tools + memory support |
-| LLM | GPT-4o / Claude | Strongest instruction-following for DevOps tasks |
-| API | FastAPI | Async-native, auto OpenAPI docs, Pydantic integration |
-| DB | PostgreSQL | ACID compliance critical for audit logs |
-| Frontend | React + Vite | Fast HMR, TypeScript, strong ecosystem |
-| State | Zustand | Minimal, no boilerplate, persisted auth |
-| Containers | Docker + Compose | Portable, reproducible environments |
+## 11. Security And Safety
+
+- Access tokens are accepted from Authorization bearer headers or the configured httpOnly cookie.
+- Refresh tokens are stored in `user_sessions`.
+- RBAC is enforced in backend route dependencies.
+- Public self-signup is limited to viewer/developer accounts.
+- Admin/operator accounts must be created by an admin.
+- GitHub webhook signatures are verified when a webhook secret is configured.
+- GitHub App installation tokens are preferred for installed repositories.
+- PAT fallback exists for local MVP testing.
+- GitHub modifications use pull requests, not direct pushes to protected branches.
+- High-risk or medium-risk agent actions can create pending approval requests.
+- Audit records redact known secret fields and truncate large values.
+
+## 12. Deployment Topology
+
+```mermaid
+flowchart TB
+    Browser[Browser] --> Frontend[Frontend Container or Vite Dev Server]
+    Frontend --> Backend[FastAPI Backend]
+    Backend --> DB[(PostgreSQL or SQLite)]
+    Backend --> Redis[(Redis)]
+    Backend --> GitHub[GitHub API]
+    Redis --> Worker[Celery Worker]
+    Redis --> Flower[Flower Monitor]
+```
+
+The project can run locally with SQLite or in a container topology with backend, frontend, PostgreSQL, Redis, Celery worker, and Flower.
+
+## 13. Known Boundaries
+
+The project currently focuses on GitHub CI/CD automation. AWS, Terraform, Kubernetes, Prometheus production monitoring, and fully autonomous remediation are future extensions unless specifically requested.

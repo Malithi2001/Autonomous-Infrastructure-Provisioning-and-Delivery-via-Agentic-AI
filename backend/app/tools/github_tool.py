@@ -26,6 +26,25 @@ GITHUB_API_BASE_URL = "https://api.github.com"
 WORKFLOW_LOG_TEXT_LIMIT = 200_000
 WORKFLOW_LOG_FILE_LIMIT = 80
 REQUEST_TIMEOUT_SECONDS = 30
+ANALYSIS_SNAPSHOT_TEXT_LIMIT = 12_000
+ANALYSIS_SNAPSHOT_FILE_LIMIT = 40
+_ANALYSIS_MANIFEST_NAMES = {
+    "package.json",
+    "requirements.txt",
+    "pyproject.toml",
+    "pipfile",
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "settings.gradle",
+    "settings.gradle.kts",
+    "dockerfile",
+    "docker-compose.yml",
+    "docker-compose.yaml",
+    "compose.yml",
+    "compose.yaml",
+}
+_ANALYSIS_SOURCE_NAMES = {"main.py", "app.py", "server.py"}
 
 _ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 _TOKEN_PATTERNS = [
@@ -285,11 +304,25 @@ def download_workflow_logs(repo_full_name: str, run_id: int, *, token: str | Non
 
 
 def _format_stack_summary(detected_stack: Mapping[str, Any]) -> str:
-    return (
+    project_count = len(detected_stack.get("detected_projects") or [])
+    summary = (
         f"Detected stack: language={detected_stack.get('language', 'unknown')}, "
         f"framework={detected_stack.get('framework', 'unknown')}, "
-        f"recommended_workflow={detected_stack.get('recommended_workflow', 'generic-ci')}."
+        f"recommended_workflow={detected_stack.get('recommended_workflow', 'generic-ci')}, "
+        f"project_dir={detected_stack.get('project_dir', '.')}, "
+        f"detected_projects={project_count}."
     )
+    warnings = detected_stack.get("ci_warnings") or []
+    if isinstance(warnings, list) and warnings:
+        warning_lines = ["", "Existing workflow compatibility warnings:"]
+        for warning in warnings[:5]:
+            if not isinstance(warning, Mapping):
+                continue
+            warning_lines.append(
+                f"- {warning.get('path', 'workflow')}: {warning.get('issue', 'Review existing workflow.')}"
+            )
+        summary += "\n" + "\n".join(warning_lines)
+    return summary
 
 
 def get_default_branch(repo_full_name: str, repo: str | None = None, *, token: str | None = None) -> str:
@@ -387,6 +420,55 @@ def get_file_content(repo_full_name: str, path: str, branch: str | None = None, 
         raise
     except GithubException as exc:
         raise GitHubToolError(_github_error_message(exc, f"Unable to read file '{path}'")) from exc
+
+
+def get_repository_analysis_inputs(
+    repo_full_name: str,
+    branch: str | None = None,
+    *,
+    token: str | None = None,
+) -> dict[str, list[str]]:
+    """
+    Return repository paths plus safe content snapshots for stack/risk analysis.
+
+    Tree paths are enough for many stacks, but manifest and workflow contents are
+    needed to detect scripts, frameworks, package managers, and existing CI
+    actions that can fail because of repository settings.
+    """
+    files = get_repository_tree(repo_full_name, branch, token=token)
+    analysis_inputs = list(files)
+
+    for path in _analysis_snapshot_paths(files):
+        try:
+            file_result = get_file_content(repo_full_name, path, branch, token=token)
+        except GitHubToolError as exc:
+            logger.warning("github.analysis_snapshot.skipped", path=path, error=str(exc))
+            continue
+
+        content = str(file_result.get("content") or "")
+        if not content.strip():
+            continue
+        cleaned = _clean_log_text(content)[:ANALYSIS_SNAPSHOT_TEXT_LIMIT]
+        analysis_inputs.append(f"{path}\n{cleaned}")
+
+    return {"files": files, "analysis_inputs": analysis_inputs}
+
+
+def _analysis_snapshot_paths(files: list[str]) -> list[str]:
+    selected: list[str] = []
+    for path in files:
+        lower = path.lower()
+        basename = lower.rsplit("/", 1)[-1]
+        is_workflow = lower.startswith(".github/workflows/") and lower.endswith((".yml", ".yaml"))
+        is_manifest = basename in _ANALYSIS_MANIFEST_NAMES
+        is_source_hint = basename in _ANALYSIS_SOURCE_NAMES and lower.endswith(".py")
+
+        if is_workflow or is_manifest or is_source_hint:
+            selected.append(path)
+
+        if len(selected) >= ANALYSIS_SNAPSHOT_FILE_LIMIT:
+            break
+    return selected
 
 
 def create_branch(
@@ -561,6 +643,7 @@ def _create_workflow_pr_from_yaml(
     workflow_yaml: str,
     detected_stack: Mapping[str, Any],
     *,
+    overwrite_existing_workflow: bool = False,
     token: str | None = None,
 ) -> dict:
     """
@@ -585,6 +668,7 @@ def _create_workflow_pr_from_yaml(
         WORKFLOW_PATH,
         workflow_yaml,
         "Add AI-generated CI workflow",
+        overwrite=overwrite_existing_workflow,
         token=token,
     )
     pr_result = create_pull_request(
@@ -613,6 +697,7 @@ def create_workflow_pr(
     workflow_yaml: str | None = None,
     detected_stack: dict | None = None,
     *,
+    overwrite_existing_workflow: bool = False,
     token: str | None = None,
 ) -> dict:
     """
@@ -627,14 +712,21 @@ def create_workflow_pr(
             _repo_full_name(repo_full_name, repo),
             workflow_yaml,
             detected_stack,
+            overwrite_existing_workflow=overwrite_existing_workflow,
             token=token,
         )
 
     normalized_repo = _validate_repo_full_name(repo_full_name)
-    files = get_repository_tree(normalized_repo, token=token)
-    stack = detect_stack(files)
+    analysis = get_repository_analysis_inputs(normalized_repo, token=token)
+    stack = detect_stack(analysis["analysis_inputs"])
     generated_yaml = generate_workflow(stack)
-    result = _create_workflow_pr_from_yaml(normalized_repo, generated_yaml, stack, token=token)
+    result = _create_workflow_pr_from_yaml(
+        normalized_repo,
+        generated_yaml,
+        stack,
+        overwrite_existing_workflow=overwrite_existing_workflow,
+        token=token,
+    )
     return {
         "repo_full_name": normalized_repo,
         "detected_stack": stack,

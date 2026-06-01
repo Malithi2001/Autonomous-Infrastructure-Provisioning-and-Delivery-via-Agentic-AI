@@ -301,7 +301,10 @@ def _dispatch_tool(tool_name: str, tool_input: dict) -> tuple[str, str]:
             )
         elif tool_name == "github_create_workflow_pr":
             from app.tools.github_tool import create_workflow_pr
-            result = create_workflow_pr(tool_input.get("repo_full_name", ""))
+            result = create_workflow_pr(
+                tool_input.get("repo_full_name", ""),
+                overwrite_existing_workflow=bool(tool_input.get("overwrite_existing_workflow")),
+            )
             details = json.dumps(result, ensure_ascii=False, default=str)
         elif tool_name == "execute_shell_command":
             from app.tools.shell_tool import execute_safe_shell_command

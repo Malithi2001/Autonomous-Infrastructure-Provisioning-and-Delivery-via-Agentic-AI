@@ -25,8 +25,9 @@ from app.services.github_app_service import (
     get_installation_for_repo,
     list_installed_repositories,
 )
+from app.services.cicd_readiness_service import assess_cicd_readiness
 from app.services.repo_analyzer import detect_stack
-from app.tools.github_tool import GitHubToolError, create_workflow_pr, get_repository_tree
+from app.tools.github_tool import GitHubToolError, create_workflow_pr, get_repository_analysis_inputs
 
 router = APIRouter()
 
@@ -57,12 +58,14 @@ async def scan_repository(
     """Fetch a GitHub repository tree and analyze its CI/CD stack."""
     try:
         token = await _installation_token_for_repo(db, request.repo_full_name)
-        files = (
-            get_repository_tree(request.repo_full_name, request.branch, token=token)
+        analysis = (
+            get_repository_analysis_inputs(request.repo_full_name, request.branch, token=token)
             if token
-            else get_repository_tree(request.repo_full_name, request.branch)
+            else get_repository_analysis_inputs(request.repo_full_name, request.branch)
         )
-        stack = detect_stack(files)
+        files = analysis["files"]
+        stack = detect_stack(analysis["analysis_inputs"])
+        readiness = assess_cicd_readiness(files, stack)
         await audit_service.log_repo_analysis(
             db,
             repo_full_name=request.repo_full_name,
@@ -90,6 +93,7 @@ async def scan_repository(
         "repo_full_name": request.repo_full_name,
         "files": files,
         "stack": stack,
+        "readiness": readiness,
     }
 
 
@@ -106,7 +110,13 @@ async def create_repository_workflow_pr(
         id=str(uuid.uuid4()),
         requested_by=actor,
         tool_name="github_create_workflow_pr",
-        tool_input=json.dumps({"repo_full_name": request.repo_full_name}, ensure_ascii=False),
+        tool_input=json.dumps(
+            {
+                "repo_full_name": request.repo_full_name,
+                "overwrite_existing_workflow": request.overwrite_existing_workflow,
+            },
+            ensure_ascii=False,
+        ),
         status="running",
         summary=f"Create AI-generated workflow PR for {request.repo_full_name}",
         source="api",
@@ -118,9 +128,16 @@ async def create_repository_workflow_pr(
     try:
         token = await _installation_token_for_repo(db, request.repo_full_name)
         result = (
-            create_workflow_pr(request.repo_full_name, token=token)
+            create_workflow_pr(
+                request.repo_full_name,
+                overwrite_existing_workflow=request.overwrite_existing_workflow,
+                token=token,
+            )
             if token
-            else create_workflow_pr(request.repo_full_name)
+            else create_workflow_pr(
+                request.repo_full_name,
+                overwrite_existing_workflow=request.overwrite_existing_workflow,
+            )
         )
     except (GitHubToolError, GitHubAppError) as exc:
         execution.status = "failed"
