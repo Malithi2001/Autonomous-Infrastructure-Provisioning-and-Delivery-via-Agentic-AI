@@ -1,10 +1,12 @@
-"""Security utilities: JWT, password hashing, RBAC."""
+"""Security utilities: JWT, password hashing, and role-based access control."""
+from __future__ import annotations
+
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Optional
 import uuid
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -12,41 +14,109 @@ from passlib.context import CryptContext
 from app.core.config import settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
+ACCESS_TOKEN_COOKIE_NAME = settings.COOKIE_NAME or "devops_access_token"
 
-
-# ── RBAC Roles ────────────────────────────────────────────────────────────────
 
 class UserRole(str, Enum):
-    VIEWER = "viewer"           # Read-only: view logs, metrics
-    DEVELOPER = "developer"     # Can trigger deployments in non-prod
-    OPERATOR = "operator"       # Full DevOps access, no prod deployments
-    ADMIN = "admin"             # Full access including production
+    VIEWER = "viewer"
+    DEVELOPER = "developer"
+    OPERATOR = "operator"
+    ADMIN = "admin"
 
 
-# Permission matrix per role
+ROLE_LABELS: dict[UserRole, str] = {
+    UserRole.ADMIN: "Admin",
+    UserRole.OPERATOR: "Operator",
+    UserRole.DEVELOPER: "Developer",
+    UserRole.VIEWER: "Viewer",
+}
+
+ROLE_DESCRIPTIONS: dict[UserRole, str] = {
+    UserRole.ADMIN: (
+        "Full platform owner. Can manage users, audit activity, approve changes, and use all agent tools."
+    ),
+    UserRole.OPERATOR: (
+        "Operations controller. Can use production-safe operational tools and decide approval gates."
+    ),
+    UserRole.DEVELOPER: (
+        "Builder workflow. Can chat with the agent, inspect systems, and use lower-risk development/staging tools."
+    ),
+    UserRole.VIEWER: (
+        "Read-only observer. Can ask the agent for insight and view execution history without changing infrastructure."
+    ),
+}
+
+# Public self-signup is intentionally limited. Privileged accounts must be
+# created by an admin so users cannot self-grant operational access.
+PUBLIC_SIGNUP_ROLES: set[UserRole] = {UserRole.DEVELOPER, UserRole.VIEWER}
+
 ROLE_PERMISSIONS: dict[UserRole, list[str]] = {
-    UserRole.VIEWER: ["logs:read", "metrics:read", "executions:read"],
+    UserRole.VIEWER: [
+        "agent:chat",
+        "approvals:read",
+        "logs:read",
+        "metrics:read",
+        "executions:read",
+    ],
     UserRole.DEVELOPER: [
-        "logs:read", "metrics:read", "executions:read",
-        "agent:chat", "deployments:staging",
+        "agent:chat",
+        "logs:read",
+        "metrics:read",
+        "executions:read",
+        "deployments:staging",
     ],
     UserRole.OPERATOR: [
-        "logs:read", "logs:write", "metrics:read", "executions:read",
-        "agent:chat", "deployments:staging", "deployments:production",
-        "infrastructure:read", "infrastructure:write",
+        "agent:chat",
+        "logs:read",
+        "logs:write",
+        "metrics:read",
+        "executions:read",
+        "executions:write",
+        "approvals:read",
+        "approvals:decide",
+        "deployments:staging",
+        "deployments:production",
+        "infrastructure:read",
+        "infrastructure:write",
     ],
-    UserRole.ADMIN: ["*"],  # Wildcard: all permissions
+    UserRole.ADMIN: ["*"],
 }
 
 
-def has_permission(role: UserRole, permission: str) -> bool:
-    """Check if a role has the given permission."""
-    perms = ROLE_PERMISSIONS.get(role, [])
+def coerce_role(value: str | UserRole | None) -> UserRole:
+    """Return a safe UserRole, defaulting to viewer for unknown values."""
+    if isinstance(value, UserRole):
+        return value
+    try:
+        return UserRole(str(value or UserRole.VIEWER.value).lower())
+    except ValueError:
+        return UserRole.VIEWER
+
+
+def get_role_permissions(role: str | UserRole | None) -> list[str]:
+    role_value = coerce_role(role)
+    permissions = ROLE_PERMISSIONS.get(role_value, [])
+    if "*" in permissions:
+        return ["*"]
+    return sorted(set(permissions))
+
+
+def has_permission(role: str | UserRole | None, permission: str) -> bool:
+    perms = ROLE_PERMISSIONS.get(coerce_role(role), [])
     return "*" in perms or permission in perms
 
 
-# ── Password Utilities ────────────────────────────────────────────────────────
+def role_profile(role: str | UserRole | None) -> dict:
+    role_value = coerce_role(role)
+    return {
+        "role": role_value.value,
+        "label": ROLE_LABELS[role_value],
+        "description": ROLE_DESCRIPTIONS[role_value],
+        "permissions": get_role_permissions(role_value),
+        "can_self_signup": role_value in PUBLIC_SIGNUP_ROLES,
+    }
+
 
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
@@ -55,8 +125,6 @@ def hash_password(password: str) -> str:
 def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
-
-# ── JWT Utilities ─────────────────────────────────────────────────────────────
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = _build_token_payload(
@@ -94,20 +162,54 @@ def decode_token(token: str) -> dict:
         )
 
 
+def _get_request_token(request: Request, bearer_token: str | None = None) -> str:
+    token = bearer_token or request.cookies.get(ACCESS_TOKEN_COOKIE_NAME)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return token
+
+
+def _decode_access_payload(request: Request, bearer_token: str | None = None) -> dict:
+    raw_token = _get_request_token(request, bearer_token)
+    payload = decode_token(raw_token)
+    if payload.get("type") != "access":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type.")
+    payload["role"] = coerce_role(payload.get("role")).value
+    return payload
+
+
 def require_permission(permission: str):
-    """FastAPI dependency: ensures current user has the required permission."""
-    async def _check(token: str = Depends(oauth2_scheme)):
-        payload = decode_token(token)
-        role = UserRole(payload.get("role", UserRole.VIEWER))
+    """FastAPI dependency: require a specific permission from bearer token or httpOnly cookie."""
+
+    async def _check(request: Request, token: str | None = Depends(oauth2_scheme)):
+        payload = _decode_access_payload(request, token)
+        role = coerce_role(payload.get("role"))
         if not has_permission(role, permission):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Permission '{permission}' required.",
+                detail=f"Permission '{permission}' required for this action.",
             )
         return payload
+
     return _check
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
-    """Return the decoded JWT payload for the current caller."""
-    return decode_token(token)
+def require_role(*roles: UserRole):
+    allowed = {role.value for role in roles}
+
+    async def _check(request: Request, token: str | None = Depends(oauth2_scheme)):
+        payload = _decode_access_payload(request, token)
+        if payload.get("role") not in allowed and payload.get("role") != UserRole.ADMIN.value:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role.")
+        return payload
+
+    return _check
+
+
+async def get_current_user(request: Request, token: str | None = Depends(oauth2_scheme)) -> dict:
+    """Return decoded JWT payload from Authorization bearer or secure httpOnly cookie."""
+    return _decode_access_payload(request, token)

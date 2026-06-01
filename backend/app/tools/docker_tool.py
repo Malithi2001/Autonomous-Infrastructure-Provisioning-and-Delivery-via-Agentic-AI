@@ -2,6 +2,8 @@
 Docker Tool — LangChain tool functions for Docker container management.
 Uses the Docker SDK for Python.
 """
+from typing import Any
+
 import docker
 from docker.errors import DockerException, NotFound, APIError
 
@@ -33,7 +35,8 @@ def list_containers(all_containers: bool = False) -> str:
             ports = ", ".join(
                 f"{h[0]['HostPort']}->{p}" for p, h in (c.ports or {}).items() if h
             ) or "none"
-            rows.append(f"- [{c.status}] {c.name} (image: {c.image.tags[0] if c.image.tags else 'unknown'}, ports: {ports})")
+            image = c.image.tags[0] if c.image.tags else "unknown"
+            rows.append(f"- [{c.status}] {c.name} (image: {image}, ports: {ports})")
         return "\n".join(rows)
     except APIError as e:
         logger.error("docker.list_containers.error", error=str(e))
@@ -100,8 +103,8 @@ def stop_container(container_name: str, timeout: int = 10) -> str:
 def run_container(
     image: str,
     name: str,
-    ports: dict = None,
-    environment: dict = None,
+    ports: dict[str, Any] | None = None,
+    environment: dict[str, Any] | None = None,
     detach: bool = True,
 ) -> str:
     """Run a new container from an image."""

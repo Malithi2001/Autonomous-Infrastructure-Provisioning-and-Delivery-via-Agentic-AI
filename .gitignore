@@ -10,7 +10,7 @@ dist/
 build/
 eggs/
 .eggs/
-lib/
+/lib/
 lib64/
 parts/
 sdist/
@@ -22,6 +22,7 @@ share/python-wheels/
 # Virtual Environments
 venv/
 .venv/
+.venv311/
 env/
 ENV/
 
@@ -32,19 +33,23 @@ coverage.xml
 htmlcov/
 *.coveragerc
 
-# mypy
+# Static analysis / lint caches
 .mypy_cache/
+.ruff_cache/
 .dmypy.json
 
 # ── Node.js / Frontend ────────────────────────────────────────────────────────
 node_modules/
 dist/
+build/
 .cache/
 .parcel-cache/
 
 # Vite
 frontend/dist/
+frontend/build/
 frontend/.vite/
+frontend/node_modules/.cache/
 
 # ── Environment Files ─────────────────────────────────────────────────────────
 .env
@@ -69,6 +74,12 @@ Thumbs.db
 *.log
 logs/
 *.pid
+
+# ── ML Generated Reports ─────────────────────────────────────────────────────
+# Keep datasets and demo model artifacts tracked; ignore generated reports.
+backend/app/ml/reports/*.png
+backend/app/ml/reports/*.txt
+backend/app/ml/reports/*.json
 
 # ── Database ──────────────────────────────────────────────────────────────────
 *.sqlite3

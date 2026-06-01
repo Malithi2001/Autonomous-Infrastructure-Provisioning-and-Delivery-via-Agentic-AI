@@ -1,0 +1,412 @@
+import { useEffect, useState } from "react";
+import {
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  GitBranch,
+  GitPullRequest,
+  Loader2,
+  RefreshCw,
+  ShieldCheck,
+  TriangleAlert,
+} from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+import {
+  workflowFailureService,
+  type WorkflowFailure,
+  type WorkflowFailureFixPRResult,
+} from "@/services/api";
+import { hasPermission } from "@/lib/rbac";
+import { useAuthStore } from "@/store/authStore";
+import clsx from "clsx";
+
+function relativeTime(value?: string | null) {
+  if (!value) return "time unknown";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "time unknown";
+  return formatDistanceToNow(date, { addSuffix: true });
+}
+
+function formatConfidence(value: number | null) {
+  if (value === null || Number.isNaN(value)) return "Not available";
+  return `${Math.round(value * 100)}%`;
+}
+
+function statusBadge(status: string) {
+  const classes: Record<string, string> = {
+    diagnosed: "badge-success",
+    diagnosis_failed: "badge-error",
+    pending: "badge-warning",
+    fix_pr_created: "badge-success",
+    approval_pending: "badge-warning",
+    recommendation_only: "badge-info",
+    rejected: "badge-error",
+  };
+  return <span className={classes[status] || "badge-info"}>{status}</span>;
+}
+
+function labelBadge(label: string | null) {
+  if (!label) return <span className="badge-warning">unclassified</span>;
+  return <span className="badge-info">{label}</span>;
+}
+
+function actionMessage(result: WorkflowFailureFixPRResult) {
+  if (result.pull_request_url) return "Fix pull request created.";
+  if (result.approval_id)
+    return "Approval request created. Review it on the Approvals page.";
+  return result.message;
+}
+
+function FailureDetails({
+  failure,
+  canCreateFixPr,
+  creating,
+  actionError,
+  actionResult,
+  onCreateFixPr,
+}: {
+  failure: WorkflowFailure;
+  canCreateFixPr: boolean;
+  creating: boolean;
+  actionError?: string;
+  actionResult?: WorkflowFailureFixPRResult;
+  onCreateFixPr: () => void;
+}) {
+  const hasFixPr = Boolean(
+    failure.fix_pr_url || actionResult?.pull_request_url,
+  );
+  const fixPrUrl = failure.fix_pr_url || actionResult?.pull_request_url;
+  const isAwaitingApproval =
+    failure.status === "approval_pending" ||
+    actionResult?.status === "approval_required";
+  const hasPrediction = Boolean(failure.predicted_label);
+
+  return (
+    <div className="border-t border-surface-600 bg-surface-900/70 px-4 py-4">
+      <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-subtle">
+            Log Excerpt
+          </p>
+          <pre className="mt-2 max-h-56 overflow-auto rounded-xl border border-surface-600 bg-surface-950 p-3 text-xs leading-5 text-ink">
+            <code>{failure.log_excerpt || "No log excerpt stored."}</code>
+          </pre>
+        </div>
+        <div className="space-y-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-subtle">
+              Suggested Fix
+            </p>
+            <p className="mt-2 text-sm leading-6 text-ink">
+              {failure.suggested_fix || "No suggested fix available."}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-subtle">
+              Fix PR
+            </p>
+            {fixPrUrl ? (
+              <a
+                href={fixPrUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 inline-flex items-center gap-2 text-sm font-semibold text-primary-700 hover:text-primary-600 dark:text-primary-300"
+              >
+                Open pull request <ExternalLink size={14} />
+              </a>
+            ) : (
+              <div className="mt-2 space-y-3">
+                {isAwaitingApproval ? (
+                  <div className="inline-flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-200">
+                    <ShieldCheck size={14} /> Waiting for human approval
+                  </div>
+                ) : (
+                  <p className="text-sm text-ink-subtle">
+                    No fix pull request has been created.
+                  </p>
+                )}
+                {canCreateFixPr &&
+                  hasPrediction &&
+                  !hasFixPr &&
+                  !isAwaitingApproval && (
+                    <button
+                      type="button"
+                      onClick={onCreateFixPr}
+                      disabled={creating}
+                      className="btn-primary inline-flex items-center gap-2"
+                    >
+                      {creating ? (
+                        <Loader2 size={15} className="animate-spin" />
+                      ) : (
+                        <GitPullRequest size={15} />
+                      )}
+                      Create Fix PR
+                    </button>
+                  )}
+                {!canCreateFixPr && !hasFixPr && (
+                  <p className="text-xs text-ink-subtle">
+                    Operator or admin access is required to create fix pull
+                    requests.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+          {actionResult && (
+            <div className="rounded-xl border border-primary-500/30 bg-primary-500/10 px-3 py-2 text-sm text-primary-700 dark:text-primary-200">
+              {actionMessage(actionResult)}
+            </div>
+          )}
+          {actionError && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-200">
+              {actionError}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FailureRow({
+  failure,
+  canCreateFixPr,
+  creating,
+  actionError,
+  actionResult,
+  onCreateFixPr,
+}: {
+  failure: WorkflowFailure;
+  canCreateFixPr: boolean;
+  creating: boolean;
+  actionError?: string;
+  actionResult?: WorkflowFailureFixPRResult;
+  onCreateFixPr: (failure: WorkflowFailure) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="card overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        className="flex w-full items-start gap-3 px-4 py-4 text-left transition-colors hover:bg-surface-800/80"
+      >
+        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-300">
+          {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate text-sm font-semibold text-ink">
+              {failure.repo_full_name}
+            </p>
+            {statusBadge(failure.status)}
+            {labelBadge(failure.predicted_label)}
+          </div>
+          <div className="mt-2 grid gap-2 text-xs text-ink-subtle md:grid-cols-2 xl:grid-cols-4">
+            <span className="truncate">
+              Workflow:{" "}
+              <span className="text-ink">
+                {failure.workflow_name || "Unknown"}
+              </span>
+            </span>
+            <span className="flex min-w-0 items-center gap-1 truncate">
+              <GitBranch size={13} />{" "}
+              <span className="truncate text-ink">
+                {failure.branch || "Unknown branch"}
+              </span>
+            </span>
+            <span>
+              Run ID:{" "}
+              <span className="font-mono text-ink">
+                {failure.workflow_run_id}
+              </span>
+            </span>
+            <span>
+              Created:{" "}
+              <span className="text-ink">
+                {relativeTime(failure.created_at)}
+              </span>
+            </span>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-ink-subtle">
+            <span>
+              Confidence:{" "}
+              <span className="font-semibold text-ink">
+                {formatConfidence(failure.confidence)}
+              </span>
+            </span>
+            {failure.workflow_url && (
+              <a
+                href={failure.workflow_url}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(event) => event.stopPropagation()}
+                className="inline-flex items-center gap-1 font-semibold text-primary-700 hover:text-primary-600 dark:text-primary-300"
+              >
+                Workflow run <ExternalLink size={13} />
+              </a>
+            )}
+          </div>
+        </div>
+      </button>
+      {expanded && (
+        <FailureDetails
+          failure={failure}
+          canCreateFixPr={canCreateFixPr}
+          creating={creating}
+          actionError={actionError}
+          actionResult={actionResult}
+          onCreateFixPr={() => onCreateFixPr(failure)}
+        />
+      )}
+    </div>
+  );
+}
+
+export default function WorkflowFailuresPage() {
+  const { user } = useAuthStore();
+  const [failures, setFailures] = useState<WorkflowFailure[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [creatingFixPrId, setCreatingFixPrId] = useState<string | null>(null);
+  const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
+  const [actionResults, setActionResults] = useState<
+    Record<string, WorkflowFailureFixPRResult>
+  >({});
+  const canCreateFixPr = hasPermission(user?.role, "executions:write");
+
+  const fetchFailures = () => {
+    let mounted = true;
+    setLoading(true);
+    setError("");
+    workflowFailureService
+      .list()
+      .then((data) => {
+        if (mounted) setFailures(data);
+      })
+      .catch((err: any) => {
+        if (mounted)
+          setError(
+            err.response?.data?.detail ||
+              err.message ||
+              "Unable to load workflow failures.",
+          );
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  };
+
+  useEffect(() => {
+    return fetchFailures();
+  }, []);
+
+  const createFixPr = async (failure: WorkflowFailure) => {
+    if (creatingFixPrId) return;
+    setCreatingFixPrId(failure.id);
+    setActionErrors((current) => ({ ...current, [failure.id]: "" }));
+    try {
+      const result = await workflowFailureService.createFixPr(failure.id);
+      setActionResults((current) => ({ ...current, [failure.id]: result }));
+      setFailures((current) =>
+        current.map((item) => {
+          if (item.id !== failure.id) return item;
+          return {
+            ...item,
+            status:
+              result.status === "approval_required"
+                ? "approval_pending"
+                : result.status,
+            fix_pr_url: result.pull_request_url || item.fix_pr_url,
+            updated_at: new Date().toISOString(),
+          };
+        }),
+      );
+    } catch (err: any) {
+      setActionErrors((current) => ({
+        ...current,
+        [failure.id]:
+          err.response?.data?.detail ||
+          err.message ||
+          "Unable to create a fix pull request.",
+      }));
+    } finally {
+      setCreatingFixPrId(null);
+    }
+  };
+
+  return (
+    <div className="flex h-full flex-col bg-surface-900">
+      <div className="shrink-0 border-b border-surface-600 bg-surface-900/90 px-6 py-4 backdrop-blur">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-red-500/30 bg-red-500/10">
+              <TriangleAlert
+                size={19}
+                className="text-red-600 dark:text-red-300"
+              />
+            </div>
+            <div>
+              <h1 className="text-base font-semibold text-ink">
+                Workflow Failures
+              </h1>
+              <p className="text-xs text-ink-subtle">
+                GitHub Actions failure diagnosis results
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={fetchFailures}
+            disabled={loading}
+            className="btn-ghost inline-flex items-center gap-2"
+          >
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />{" "}
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 py-5 md:px-6">
+        {loading ? (
+          <div className="flex h-40 items-center justify-center">
+            <Loader2 size={24} className="animate-spin text-primary-500" />
+          </div>
+        ) : error ? (
+          <div className="mx-auto max-w-3xl rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-700 dark:text-red-200">
+            {error}
+          </div>
+        ) : failures.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center text-center">
+            <div className="mb-4 rounded-3xl border border-surface-600 bg-surface-800 p-4">
+              <TriangleAlert size={40} className="text-ink-subtle" />
+            </div>
+            <p className="font-medium text-ink">No workflow failures yet</p>
+            <p className="mt-1 text-sm text-ink-subtle">
+              Failed GitHub Actions runs will appear here after webhook
+              diagnosis.
+            </p>
+          </div>
+        ) : (
+          <div className={clsx("mx-auto max-w-6xl space-y-3")}>
+            {failures.map((failure) => (
+              <FailureRow
+                key={failure.id}
+                failure={failure}
+                canCreateFixPr={canCreateFixPr}
+                creating={creatingFixPrId === failure.id}
+                actionError={actionErrors[failure.id]}
+                actionResult={actionResults[failure.id]}
+                onCreateFixPr={createFixPr}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

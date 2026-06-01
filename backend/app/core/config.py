@@ -18,7 +18,7 @@ class Settings(BaseSettings):
         dotenv_settings,
         file_secret_settings,
     ):
-        return init_settings, dotenv_settings, env_settings, file_secret_settings
+        return init_settings, env_settings, dotenv_settings, file_secret_settings
 
     # App
     APP_NAME: str = "Smart DevOps Assistant"
@@ -29,20 +29,37 @@ class Settings(BaseSettings):
     # Server
     HOST: str = "0.0.0.0"
     PORT: int = 8000
-    ALLOWED_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000"
+    ALLOWED_ORIGINS: str = ",".join(
+        [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:5174",
+            "http://127.0.0.1:5174",
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ]
+    )
 
     # Database
+    # Supabase pooler example:
+    # postgresql://postgres.<project-ref>:[YOUR-PASSWORD]@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres
     DATABASE_URL: str = "sqlite+aiosqlite:///./devops_assistant.db"
+    DATABASE_SSL_VERIFY: bool = True
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
     MEMORY_BACKEND: str = "auto"
+    CELERY_BROKER_URL: str = ""
+    CELERY_RESULT_BACKEND: str = ""
 
     # Auth
     SECRET_KEY: str = "change-this-in-production"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    COOKIE_SECURE: bool = False
+    COOKIE_SAMESITE: str = "lax"
+    COOKIE_NAME: str = "devops_access_token"
 
     # LLM
     OPENAI_API_KEY: str = ""
@@ -55,6 +72,15 @@ class Settings(BaseSettings):
     GITHUB_TOKEN: str = ""
     GITHUB_WEBHOOK_SECRET: str = ""
     GITHUB_REPO_FULL_NAME: str = ""
+    GITHUB_APP_ID: str = ""
+    GITHUB_APP_PRIVATE_KEY: str = ""
+    GITHUB_APP_WEBHOOK_SECRET: str = ""
+    GITHUB_APP_CLIENT_ID: str = ""
+    GITHUB_APP_CLIENT_SECRET: str = ""
+
+    # ML model artifacts
+    FAILURE_MODEL_PATH: str = ""
+    FIX_MAPPING_PATH: str = ""
 
     # AWS
     AWS_ACCESS_KEY_ID: str = ""

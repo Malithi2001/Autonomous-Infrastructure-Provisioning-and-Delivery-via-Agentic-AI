@@ -1,6 +1,4 @@
 """Tests for the DevOps Agent and tools."""
-import pytest
-from unittest.mock import MagicMock, patch
 
 from app.tools.shell_tool import execute_safe_shell_command, _is_allowed
 from app.tools.monitoring_tool import get_system_metrics
