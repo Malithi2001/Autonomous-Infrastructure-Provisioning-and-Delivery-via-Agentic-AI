@@ -17,16 +17,48 @@ jobs:
     name: Deploy to ${{ github.event.inputs.environment || 'staging' }}
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'staging' }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || secrets.AWS_REGION || secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate deployment configuration
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          missing=0
+
+          if [ -z "$AWS_REGION" ]; then
+            echo "::error::AWS region is missing. Set repository variable AWS_REGION or secret AWS_REGION/AWS_DEFAULT_REGION."
+            missing=1
+          fi
+
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "::error::AWS credentials are missing. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY secrets."
+            missing=1
+          fi
+
+          if [ -z "$EC2_HOST" ] || [ -z "$EC2_USER" ] || [ -z "$EC2_SSH_KEY" ]; then
+            echo "::error::EC2 SSH deployment secrets are missing. Set EC2_HOST, EC2_USER, and EC2_SSH_KEY."
+            missing=1
+          fi
+
+          exit "$missing"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
