@@ -1,165 +1,105 @@
 # MVP Demo Guide
 
-Use this guide for a short supervisor demo of the CI/CD failure diagnosis and workflow generation MVP.
+This is the shorter demo path for quick reviews.
 
-## 1. Train the Failure Prediction Model
+## 1. Demo Objective
 
-From the project root:
+Show that the project can:
 
-```bash
-cd backend
-venv/bin/python app/ml/train_failure_model.py
-```
+- diagnose CI/CD logs,
+- detect repository stack,
+- generate GitHub Actions workflows,
+- create workflow PRs,
+- store workflow failure diagnoses,
+- use approvals and audit logs.
 
-Show that the script prints accuracy/classification metrics and saves:
+## 2. Five-Minute Flow
 
-- `backend/app/ml/failure_model.joblib`
-- `backend/app/ml/fix_mapping.joblib`
+### 1. Login
 
-Explain:
+Show that the user enters a protected dashboard after authentication.
 
-- The model uses TF-IDF features over CI/CD log text.
-- Logistic regression predicts the likely failure category.
-- A saved fix mapping returns a human-readable remediation suggestion.
+Point to:
 
-## 2. Start the App
+- JWT auth,
+- httpOnly cookie,
+- RBAC-based navigation.
 
-Terminal 1:
+### 2. Diagnose A Log
 
-```bash
-make dev-backend
-```
+Open Diagnosis.
 
-Terminal 2:
-
-```bash
-make dev-frontend
-```
-
-Open:
+Paste a log such as:
 
 ```text
-http://localhost:5173
+Run npm test
+npm ERR! Missing script: "test"
+Error: Process completed with exit code 1.
 ```
 
-If the frontend cannot reach the API, check `frontend/.env` and make sure `VITE_API_BASE_URL` matches the backend port.
+Expected:
 
-Demo login:
+- label: `npm_missing_test_script` or similar,
+- confidence,
+- suggested fix,
+- recommendation.
 
-```text
-Email: viewer@company.example.com
-Password: viewer123
-```
+### 3. Scan Repository
 
-Then open:
+Open Repository Setup.
 
-```text
-http://localhost:5173/diagnosis
-```
+Scan `owner/repo`.
 
-## 3. Paste a Failed CI/CD Log
+Expected:
 
-On the CI/CD Assistant page, use the Failure Log Classifier section.
+- file list,
+- stack,
+- readiness score,
+- warnings,
+- next actions.
 
-Example log:
+### 4. Create Workflow PR
 
-```text
-npm test failed: npm ERR! Missing script: test.
-To see a list of scripts, run npm run.
-```
+Create the workflow pull request.
 
-Click:
+Expected:
 
-```text
-Predict Failure
-```
+- branch name,
+- `.github/workflows/ai-generated-ci.yml`,
+- GitHub PR URL.
 
-## 4. Show the Prediction
+Explain that this is safe because it does not push to main.
 
-Point out the three returned values:
+### 5. Show Audit
 
-- Label, for example `npm_missing_test_script`
-- Confidence score
-- Suggested fix, for example adding a `test` script to `package.json` or updating the CI command
-
-Explain that this gives a developer a quick root-cause hint instead of manually reading long logs.
-
-## 5. Enter a Repository File List
-
-Use the Workflow Generator section.
-
-Example file list:
-
-```text
-package.json
-package-lock.json
-src/App.tsx
-vite.config.ts
-Dockerfile
-```
-
-Click:
-
-```text
-Generate Workflow
-```
-
-## 6. Generate a GitHub Actions Workflow
+Open Executions.
 
 Show:
 
-- detected stack, for example JavaScript / React / npm / Docker,
-- recommended workflow type, for example `node-ci`,
-- generated YAML in the code block,
-- output path `.github/workflows/ai-generated-ci.yml`.
+- repository scan record,
+- workflow PR record,
+- prediction record,
+- webhook record if available.
 
-Explain that the current MVP generates workflow YAML deterministically from repository signals.
+## 3. Multi-Agent Explanation
 
-## 7. Optional API Demo
+Use this short version:
 
-Prediction endpoint:
+> The Orchestration Agent receives the user request, detects the intent, and sends it to one specialized agent. CI/CD Agent handles stack and YAML generation, Diagnosis Agent handles logs and ML prediction, GitHub Agent handles real repositories and PRs, and CLI Agent is optional for local runtime inspection.
 
-```bash
-curl -i -sS -c /tmp/devops_demo_cookie.txt \
-  -X POST http://127.0.0.1:8000/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"viewer@company.example.com","password":"viewer123"}'
+## 4. MVP Boundaries
 
-curl -i -sS -b /tmp/devops_demo_cookie.txt \
-  -X POST http://127.0.0.1:8000/api/v1/model/predict-failure \
-  -H "Content-Type: application/json" \
-  -d '{"log_text":"npm test failed: npm ERR! Missing script: test."}'
-```
+Be honest:
 
-Workflow generation endpoint:
+- It handles common CI/CD failure categories, not every possible build failure.
+- Generated workflows must be reviewed before merging.
+- Real GitHub operations depend on correct permissions.
+- AWS/Terraform/Kubernetes are future work.
 
-```bash
-curl -i -sS \
-  -X POST http://127.0.0.1:8000/api/v1/cicd/generate-workflow \
-  -H "Content-Type: application/json" \
-  -d '{"files":["package.json","package-lock.json","src/App.tsx","vite.config.ts","Dockerfile"]}'
-```
+## 5. Best Screens To Show
 
-## 8. Future GitHub App PR Automation
-
-Explain the planned production workflow:
-
-1. A GitHub App receives a failed workflow event.
-2. The backend fetches the workflow logs.
-3. The trained model predicts the failure category.
-4. The repo analyzer detects the stack.
-5. The workflow generator creates or updates GitHub Actions YAML.
-6. A GitHub branch is created.
-7. The generated workflow is committed to `.github/workflows/ai-generated-ci.yml`.
-8. A pull request is opened for a human reviewer.
-
-The repository already includes GitHub helper code for creating workflow PRs; the future work is to connect that into a complete GitHub App installation and approval flow.
-
-## 9. Demo Close
-
-Summarize the MVP value:
-
-- faster CI/CD failure diagnosis,
-- practical fix suggestions,
-- automated CI workflow generation,
-- clear path to supervised PR automation instead of uncontrolled production changes.
+- Diagnosis page.
+- Repository Setup page.
+- Workflow Failures page.
+- Approvals page.
+- Executions page.

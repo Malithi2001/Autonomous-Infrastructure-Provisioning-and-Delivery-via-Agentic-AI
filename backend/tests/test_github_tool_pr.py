@@ -208,6 +208,21 @@ def test_create_workflow_pr_uses_timestamp_branch_when_default_exists(fake_repo,
     assert fake_repo.created_files[0]["branch"] == "ai-cicd/setup-pipeline-20260531120000"
 
 
+def test_create_workflow_pr_can_overwrite_existing_generated_workflow(fake_repo):
+    fake_repo.files[".github/workflows/ai-generated-ci.yml"] = _Obj(sha="existing-workflow-sha")
+
+    result = github_tool.create_workflow_pr(
+        "octo-org/demo-app",
+        overwrite_existing_workflow=True,
+    )
+
+    assert result["file"]["action"] == "updated"
+    assert fake_repo.updated_files[0]["branch"] == "ai-cicd/setup-pipeline"
+    assert fake_repo.updated_files[0]["path"] == ".github/workflows/ai-generated-ci.yml"
+    assert fake_repo.updated_files[0]["sha"] == "existing-workflow-sha"
+    assert "actions/setup-python@v5" in fake_repo.updated_files[0]["content"]
+
+
 def test_create_branch_rejects_existing_branch(fake_repo):
     fake_repo.refs["ai-cicd/setup-pipeline"] = "existing-sha"
 

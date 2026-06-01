@@ -5,6 +5,7 @@ import {
   GitBranch,
   Loader2,
   Radar,
+  ShieldCheck,
 } from "lucide-react";
 import {
   repositoryService,
@@ -25,6 +26,8 @@ function stackSummary(stack: RepositoryScanResult["stack"]) {
 }
 
 function StackPanel({ result }: { result: RepositoryScanResult }) {
+  const ciWarnings = result.stack.ci_warnings ?? [];
+
   return (
     <div className="rounded-2xl border border-surface-600 bg-surface-900/70 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -52,7 +55,113 @@ function StackPanel({ result }: { result: RepositoryScanResult }) {
         <span>
           Files: <span className="text-ink">{result.files.length}</span>
         </span>
+        <span>
+          Directory:{" "}
+          <span className="text-ink">{result.stack.project_dir || "."}</span>
+        </span>
       </div>
+      {result.stack.detected_projects.length > 1 && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {result.stack.detected_projects.map((project) => (
+            <span
+              key={`${project.type}-${project.path}`}
+              className="badge-info"
+            >
+              {project.type}: {project.path}
+            </span>
+          ))}
+        </div>
+      )}
+      {ciWarnings.length > 0 && (
+        <div className="mt-4 space-y-2">
+          {ciWarnings.map((warning) => (
+            <div
+              key={`${warning.path}-${warning.issue}`}
+              className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-100"
+            >
+              <p className="font-medium">{warning.path}</p>
+              <p className="mt-1">{warning.issue}</p>
+              <p className="mt-1 text-xs opacity-90">{warning.recommendation}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReadinessPanel({ result }: { result: RepositoryScanResult }) {
+  const { readiness } = result;
+  const scoreColor =
+    readiness.score >= 80
+      ? "text-emerald-500"
+      : readiness.score >= 60
+        ? "text-amber-500"
+        : "text-red-500";
+
+  return (
+    <div className="rounded-2xl border border-surface-600 bg-surface-900/70 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.16em] text-ink-subtle">
+            CI/CD Readiness
+          </p>
+          <p className="mt-2 text-sm text-ink-subtle">{readiness.summary}</p>
+        </div>
+        <div className="text-right">
+          <p className={`text-3xl font-semibold ${scoreColor}`}>
+            {readiness.score}
+          </p>
+          <p className="text-xs text-ink-subtle">Grade {readiness.grade}</p>
+        </div>
+      </div>
+
+      {readiness.strengths.length > 0 && (
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          {readiness.strengths.slice(0, 4).map((strength) => (
+            <div
+              key={strength}
+              className="flex items-start gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-800 dark:text-emerald-100"
+            >
+              <ShieldCheck size={15} className="mt-0.5 shrink-0" />
+              <span>{strength}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {readiness.findings.length > 0 && (
+        <div className="mt-4 space-y-2">
+          {readiness.findings.slice(0, 4).map((finding) => (
+            <div
+              key={`${finding.category}-${finding.title}`}
+              className="rounded-md border border-surface-600 bg-surface-800/60 px-3 py-2 text-sm"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="badge-info">{finding.severity}</span>
+                <p className="font-medium text-ink">{finding.title}</p>
+              </div>
+              <p className="mt-1 text-ink-subtle">{finding.detail}</p>
+              <p className="mt-1 text-xs text-ink-subtle">
+                {finding.recommendation}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {readiness.recommended_next_actions.length > 0 && (
+        <div className="mt-4">
+          <p className="text-xs uppercase tracking-[0.16em] text-ink-subtle">
+            Next Actions
+          </p>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-subtle">
+            {readiness.recommended_next_actions.slice(0, 4).map((action) => (
+              <li key={action}>{action}</li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -65,6 +174,7 @@ export default function RepositorySetupPage() {
   const [prResult, setPrResult] = useState<WorkflowPRResult | null>(null);
   const [scanning, setScanning] = useState(false);
   const [creatingPr, setCreatingPr] = useState(false);
+  const [overwriteWorkflow, setOverwriteWorkflow] = useState(false);
   const [error, setError] = useState("");
 
   const normalizedRepo = repoFullName.trim();
@@ -94,7 +204,10 @@ export default function RepositorySetupPage() {
     setCreatingPr(true);
     setError("");
     try {
-      const result = await repositoryService.createWorkflowPr(normalizedRepo);
+      const result = await repositoryService.createWorkflowPr(
+        normalizedRepo,
+        overwriteWorkflow,
+      );
       setPrResult(result);
       setScanResult(
         (current) =>
@@ -102,6 +215,14 @@ export default function RepositorySetupPage() {
             repo_full_name: result.repo_full_name,
             files: [],
             stack: result.detected_stack,
+            readiness: {
+              score: 0,
+              grade: "N/A",
+              summary: "Scan the repository to view CI/CD readiness.",
+              strengths: [],
+              findings: [],
+              recommended_next_actions: [],
+            },
           },
       );
     } catch (err: any) {
@@ -176,7 +297,10 @@ export default function RepositorySetupPage() {
 
           {scanResult && (
             <section className="card p-5">
-              <StackPanel result={scanResult} />
+              <div className="space-y-4">
+                <StackPanel result={scanResult} />
+                <ReadinessPanel result={scanResult} />
+              </div>
               <div className="mt-5 flex flex-wrap items-center gap-3">
                 <button
                   type="button"
@@ -196,6 +320,20 @@ export default function RepositorySetupPage() {
                   main.
                 </span>
               </div>
+              <label className="mt-4 flex items-start gap-3 text-sm text-ink-subtle">
+                <input
+                  type="checkbox"
+                  checked={overwriteWorkflow}
+                  onChange={(event) =>
+                    setOverwriteWorkflow(event.target.checked)
+                  }
+                  className="mt-1 h-4 w-4 rounded border-surface-500 bg-surface-800 text-primary-600 focus:ring-primary-500"
+                />
+                <span>
+                  Replace existing AI-generated workflow file in the pull
+                  request branch
+                </span>
+              </label>
             </section>
           )}
 

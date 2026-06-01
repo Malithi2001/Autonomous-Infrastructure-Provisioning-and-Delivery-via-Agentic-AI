@@ -183,12 +183,24 @@ class CICDStackResponse(BaseModel):
     has_docker: bool
     has_existing_workflows: bool
     recommended_workflow: str
+    project_dir: str = "."
+    detected_projects: list[dict[str, Any]] = Field(default_factory=list)
+    ci_warnings: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class CICDWorkflowResponse(BaseModel):
     stack: CICDStackResponse
     path: str
     workflow_yaml: str
+
+
+class CICDReadinessReportResponse(BaseModel):
+    score: int
+    grade: str
+    summary: str
+    strengths: list[str] = Field(default_factory=list)
+    findings: list[dict[str, Any]] = Field(default_factory=list)
+    recommended_next_actions: list[str] = Field(default_factory=list)
 
 
 class RepositoryScanRequest(BaseModel):
@@ -200,6 +212,7 @@ class RepositoryScanResponse(BaseModel):
     repo_full_name: str
     files: list[str]
     stack: CICDStackResponse
+    readiness: CICDReadinessReportResponse
 
 
 class RepositoryInstallationOut(BaseModel):
@@ -218,6 +231,7 @@ class RepositoryInstallationOut(BaseModel):
 
 class RepositoryWorkflowPRRequest(BaseModel):
     repo_full_name: str = Field(..., min_length=3, max_length=255)
+    overwrite_existing_workflow: bool = False
 
 
 class RepositoryWorkflowPRResponse(BaseModel):
