@@ -295,6 +295,24 @@ def _ci_warnings(entries: list[_Entry]) -> list[CIWarning]:
                 }
             )
 
+        if "aws-actions/configure-aws-credentials" in content and "aws-region:" not in content:
+            warnings.append(
+                {
+                    "severity": "error",
+                    "path": entry["path"],
+                    "issue": (
+                        "Existing workflow uses aws-actions/configure-aws-credentials "
+                        "without the required aws-region input."
+                    ),
+                    "recommendation": (
+                        "Add `aws-region: ${{ secrets.AWS_REGION }}` or a literal region such as "
+                        "`us-east-1` to the configure-aws-credentials step. If this is only a CI "
+                        "workflow, remove the AWS credentials step because the generated AI workflow "
+                        "does not require AWS deployment credentials."
+                    ),
+                }
+            )
+
         if "pull_request_target:" in content:
             warnings.append(
                 {
