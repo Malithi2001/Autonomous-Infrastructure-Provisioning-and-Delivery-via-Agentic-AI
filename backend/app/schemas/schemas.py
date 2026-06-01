@@ -96,6 +96,9 @@ class ApprovalDecision(BaseModel):
 class ApprovalRequestOut(BaseModel):
     id: uuid.UUID
     requested_by: str
+    tool_name: Optional[str] = None
+    tool_input: Optional[str] = None
+    payload: Optional[str] = None
     action: str
     risk_level: str
     summary: str
@@ -112,6 +115,8 @@ class ApprovalRequestOut(BaseModel):
 class ExecutionOut(BaseModel):
     id: uuid.UUID
     requested_by: str
+    tool_name: Optional[str] = None
+    tool_input: Optional[str] = None
     status: str
     summary: str
     details: Optional[str] = None
@@ -120,3 +125,104 @@ class ExecutionOut(BaseModel):
     source: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class WorkflowFailureOut(BaseModel):
+    id: uuid.UUID
+    repo_full_name: str
+    workflow_run_id: int
+    workflow_name: Optional[str] = None
+    branch: Optional[str] = None
+    conclusion: str
+    workflow_url: Optional[str] = None
+    log_excerpt: Optional[str] = None
+    predicted_label: Optional[str] = None
+    confidence: Optional[float] = None
+    suggested_fix: Optional[str] = None
+    recommendation: Optional[dict[str, Any]] = None
+    fix_pr_url: Optional[str] = None
+    status: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class WorkflowFailureFixPRResponse(BaseModel):
+    workflow_failure_id: uuid.UUID
+    repo_full_name: str
+    status: str
+    approval_id: Optional[uuid.UUID] = None
+    branch: Optional[str] = None
+    workflow_path: Optional[str] = None
+    pull_request_url: Optional[str] = None
+    message: str
+    recommendation: Optional[dict[str, Any]] = None
+    approval_details: Optional[dict[str, Any]] = None
+
+
+class FailurePredictionRequest(BaseModel):
+    log_text: str = Field(default="", max_length=20000)
+
+
+class FailurePredictionResponse(BaseModel):
+    label: str
+    confidence: Optional[float] = None
+    suggested_fix: str
+    recommendation: dict[str, Any]
+
+
+class CICDAnalyzeFilesRequest(BaseModel):
+    files: list[str] = Field(default_factory=list, max_length=5000)
+
+
+class CICDStackResponse(BaseModel):
+    language: str
+    framework: str
+    package_manager: str
+    has_docker: bool
+    has_existing_workflows: bool
+    recommended_workflow: str
+
+
+class CICDWorkflowResponse(BaseModel):
+    stack: CICDStackResponse
+    path: str
+    workflow_yaml: str
+
+
+class RepositoryScanRequest(BaseModel):
+    repo_full_name: str = Field(..., min_length=3, max_length=255)
+    branch: Optional[str] = Field(default=None, max_length=255)
+
+
+class RepositoryScanResponse(BaseModel):
+    repo_full_name: str
+    files: list[str]
+    stack: CICDStackResponse
+
+
+class RepositoryInstallationOut(BaseModel):
+    id: uuid.UUID
+    installation_id: int
+    repo_full_name: str
+    owner: str
+    repo: str
+    default_branch: str
+    status: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RepositoryWorkflowPRRequest(BaseModel):
+    repo_full_name: str = Field(..., min_length=3, max_length=255)
+
+
+class RepositoryWorkflowPRResponse(BaseModel):
+    repo_full_name: str
+    detected_stack: CICDStackResponse
+    branch: str
+    workflow_path: str
+    pull_request_url: str

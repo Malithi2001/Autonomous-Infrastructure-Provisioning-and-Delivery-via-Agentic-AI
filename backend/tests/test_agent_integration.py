@@ -10,7 +10,6 @@ Integration tests covering all 6 improvements:
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -20,12 +19,10 @@ import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.testclient import TestClient
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.database import Base, get_db
-from app.core.security import UserRole, create_access_token, hash_password
-from app.models.models import User  # registers all models
+from app.core.security import create_access_token
 
 # ── In-memory SQLite test DB ──────────────────────────────────────────────────
 
@@ -49,7 +46,7 @@ def _build_test_app() -> FastAPI:
     return _app
 
 
-test_app = _build_test_app()
+_test_app = _build_test_app()
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -74,14 +71,14 @@ async def db_session():
 async def override_db(db_session: AsyncSession):
     async def _override():
         yield db_session
-    test_app.dependency_overrides[get_db] = _override
+    _test_app.dependency_overrides[get_db] = _override
     yield
-    test_app.dependency_overrides.pop(get_db, None)
+    _test_app.dependency_overrides.pop(get_db, None)
 
 
 @pytest.fixture()
 def client():
-    with TestClient(test_app, raise_server_exceptions=False) as c:
+    with TestClient(_test_app, raise_server_exceptions=False) as c:
         yield c
 
 
@@ -89,6 +86,7 @@ def client():
 
 def _token(role: str = "developer") -> str:
     return create_access_token({"sub": str(uuid.uuid4()), "role": role, "username": f"user_{role}"})
+
 
 def _auth(role: str = "developer") -> dict:
     return {"Authorization": f"Bearer {_token(role)}"}
@@ -230,6 +228,36 @@ class TestHITLApprovalFlow:
         )
         assert resp.status_code == 404
 
+    def test_chat_hitl_exception_creates_pending_approval(self, client: TestClient):
+        from app.agents.tools_registry import HITLApprovalRequired
+
+        class _ApprovalAgent:
+            async def chat(self, msg: str, db=None) -> dict:
+                raise HITLApprovalRequired(
+                    tool_name="github_trigger_workflow",
+                    tool_input={"repo_full_name": "octo-org/demo-app", "workflow_id": "deploy.yml", "ref": "main"},
+                    risk_level="critical",
+                    summary="Trigger production deployment workflow",
+                )
+
+        with patch("app.api.routes.agent.get_or_create_agent", return_value=_ApprovalAgent()):
+            response = client.post(
+                "/api/v1/agent/chat",
+                json={"message": "deploy production"},
+                headers=_auth("operator"),
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["requires_approval"] is True
+        assert body["approval_id"]
+        assert "Approval required" in body["output"]
+
+        approvals_response = client.get("/api/v1/approvals/", headers=_auth("operator"))
+        assert approvals_response.status_code == 200
+        approvals = approvals_response.json()
+        assert any(item["id"] == body["approval_id"] and item["status"] == "pending" for item in approvals)
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 2. Persistent DB-backed memory
@@ -370,7 +398,7 @@ class TestWebSocketConnectionLimit:
 
         ws = MagicMock()
         ws.accept = AsyncMock()
-        ws.close  = AsyncMock()
+        ws.close = AsyncMock()
 
         result = await mgr.connect(ws, user_id)
         assert result is True
@@ -389,7 +417,7 @@ class TestWebSocketConnectionLimit:
         async def _mock_ws():
             ws = MagicMock()
             ws.accept = AsyncMock()
-            ws.close  = AsyncMock()
+            ws.close = AsyncMock()
             return ws
 
         # Fill up to the limit
@@ -416,7 +444,7 @@ class TestWebSocketConnectionLimit:
         for user_id in ["u1", "u2", "u3"]:
             ws = MagicMock()
             ws.accept = AsyncMock()
-            ws.close  = AsyncMock()
+            ws.close = AsyncMock()
             await mgr.connect(ws, user_id)
 
         assert mgr.total_connections() == 3
@@ -429,13 +457,13 @@ class TestWebSocketConnectionLimit:
 class TestWebSocketStreaming:
 
     def test_ws_rejects_missing_token(self):
-        with TestClient(test_app) as c:
+        with TestClient(_test_app) as c:
             with pytest.raises(Exception):
                 with c.websocket_connect("/ws/ws/agent") as ws:
                     ws.receive_text()
 
     def test_ws_rejects_bad_token(self):
-        with TestClient(test_app) as c:
+        with TestClient(_test_app) as c:
             with pytest.raises(Exception):
                 with c.websocket_connect("/ws/ws/agent?token=garbage") as ws:
                     ws.receive_text()
@@ -443,7 +471,7 @@ class TestWebSocketStreaming:
     @pytest.mark.asyncio
     async def test_ws_streams_tokens_and_done_event(self):
         token = _token("developer")
-        sid   = str(uuid.uuid4())
+        sid = str(uuid.uuid4())
 
         async def _fake_stream(msg: str, db=None):
             for chunk in ["Hello", " world", "!"]:
@@ -453,7 +481,7 @@ class TestWebSocketStreaming:
         mock_agent.stream_chat = _fake_stream
 
         with patch("app.api.routes.agent.get_or_create_agent", return_value=mock_agent):
-            with TestClient(test_app) as c:
+            with TestClient(_test_app) as c:
                 with c.websocket_connect(f"/ws/ws/agent?token={token}") as ws:
                     ws.send_json({"message": "hello", "session_id": sid})
 

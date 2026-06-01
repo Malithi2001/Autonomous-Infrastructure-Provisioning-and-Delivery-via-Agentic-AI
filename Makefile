@@ -1,122 +1,164 @@
 # ============================================================
-# DevOps Assistant - Project Makefile
+# Smart DevOps Assistant - Developer Makefile
 # ============================================================
 
 .DEFAULT_GOAL := help
 
-PYTHON ?= python3
-VENV := backend/venv
+SHELL := /bin/sh
+PYTHON ?= $(shell if command -v python3.11 >/dev/null 2>&1; then echo python3.11; elif command -v python3 >/dev/null 2>&1; then echo python3; elif command -v python >/dev/null 2>&1; then echo python; else echo python3; fi)
+BACKEND_DIR := backend
+FRONTEND_DIR := frontend
+BACKEND_VENV := $(BACKEND_DIR)/venv
+BACKEND_PY := $(BACKEND_VENV)/bin/python
+PIP := $(BACKEND_PY) -m pip
+NPM := npm
+COMPOSE := $(shell if docker compose version >/dev/null 2>&1; then echo "docker compose"; elif command -v docker-compose >/dev/null 2>&1; then echo "docker-compose"; else echo ""; fi)
 
-ifeq ($(OS),Windows_NT)
-BACKEND_PY := venv/Scripts/python.exe
-VENV_PY := $(VENV)/Scripts/python.exe
-else
-BACKEND_PY := venv/bin/python
-VENV_PY := $(VENV)/bin/python
-endif
+.PHONY: help setup backend-install frontend-install dev dev-build backend frontend train-model \
+	test test-backend test-frontend lint lint-backend lint-frontend format format-backend format-frontend \
+	build docker-build clean docker-down docker-logs reset
 
-.PHONY: help \
-	setup setup-backend setup-frontend \
-	dev dev-backend dev-frontend \
-	test test-backend \
-	lint lint-backend lint-frontend \
-	build build-frontend \
-	docker-up docker-down docker-logs docker-clean \
-	clean clean-python clean-node clean-share
-
+## Show all available commands.
 help:
-	@echo "DevOps Assistant commands"
+	@echo "Smart DevOps Assistant commands"
 	@echo ""
 	@echo "Setup:"
-	@echo "  make setup             Install backend and frontend dependencies"
-	@echo "  make setup-backend     Create backend venv and install Python packages"
-	@echo "  make setup-frontend    Install frontend npm packages"
+	@echo "  make setup              Install backend and frontend dependencies"
+	@echo "  make backend-install    Create backend venv and install requirements.txt"
+	@echo "  make frontend-install   Install frontend npm dependencies"
 	@echo ""
 	@echo "Run:"
-	@echo "  make dev               Start the full stack with Docker Compose"
-	@echo "  make dev-backend       Start FastAPI on http://localhost:8000"
-	@echo "  make dev-frontend      Start Vite on http://localhost:5173"
+	@echo "  make dev                Start full project with Docker Compose"
+	@echo "  make dev-build          Build and start full project with Docker Compose"
+	@echo "  make backend            Start FastAPI locally on http://localhost:8000"
+	@echo "  make frontend           Start Vite locally on http://localhost:5173"
+	@echo "  make train-model        Train the CI/CD failure classification model"
 	@echo ""
 	@echo "Quality:"
-	@echo "  make test              Run backend tests"
-	@echo "  make lint              Run backend and frontend linters"
-	@echo "  make build             Build the frontend"
+	@echo "  make test               Run backend and frontend tests where configured"
+	@echo "  make test-backend       Run backend pytest suite"
+	@echo "  make test-frontend      Run frontend tests if package.json defines test"
+	@echo "  make lint               Run configured backend/frontend linters"
+	@echo "  make format             Run configured backend/frontend formatters"
+	@echo "  make build              Build frontend production bundle"
 	@echo ""
 	@echo "Docker:"
-	@echo "  make docker-up         Build and start all services"
-	@echo "  make docker-down       Stop all services"
-	@echo "  make docker-logs       Tail service logs"
-	@echo "  make docker-clean      Remove containers, volumes, and local images"
+	@echo "  make docker-build       Build Docker images"
+	@echo "  make docker-down        Stop Docker Compose services"
+	@echo "  make docker-logs        Show Docker Compose logs"
 	@echo ""
 	@echo "Cleanup:"
-	@echo "  make clean             Remove generated dependency/build/cache folders"
-	@echo "  make clean-python      Remove backend virtualenvs and Python caches"
-	@echo "  make clean-node        Remove frontend node_modules and build caches"
-	@echo "  make clean-share       Clean generated files before sharing the project"
+	@echo "  make clean              Remove safe generated cache/build files only"
+	@echo "  make reset              Stop containers and remove safe generated files"
 
-# Setup
-setup: setup-backend setup-frontend
+## Install backend and frontend dependencies if their manifests exist.
+setup: backend-install frontend-install
 
-setup-backend:
-	$(PYTHON) -m venv $(VENV)
-	$(VENV_PY) -m pip install --upgrade pip
-	$(VENV_PY) -m pip install -r backend/requirements.txt
+## Create backend virtualenv and install Python dependencies.
+backend-install:
+	@if [ ! -f "$(BACKEND_DIR)/requirements.txt" ]; then echo "No backend/requirements.txt found; skipping backend install."; exit 0; fi
+	$(PYTHON) -m venv $(BACKEND_VENV)
+	$(PIP) install --upgrade pip
+	$(PIP) install -r $(BACKEND_DIR)/requirements.txt
 
-setup-frontend:
-	cd frontend && npm install
+## Install frontend npm dependencies inside frontend/.
+frontend-install:
+	@if [ ! -f "$(FRONTEND_DIR)/package.json" ]; then echo "No frontend/package.json found; skipping frontend install."; exit 0; fi
+	@cd $(FRONTEND_DIR) && if [ -f package-lock.json ]; then $(NPM) ci; else $(NPM) install; fi
 
-# Run locally
-dev: docker-up
+## Start the full project using Docker Compose.
+dev:
+	@if [ -z "$(COMPOSE)" ]; then echo "Docker Compose is not available."; exit 1; fi
+	$(COMPOSE) up -d
 
-dev-backend:
-	cd backend && $(BACKEND_PY) -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+## Build and start the full project using Docker Compose.
+dev-build:
+	@if [ -z "$(COMPOSE)" ]; then echo "Docker Compose is not available."; exit 1; fi
+	$(COMPOSE) up -d --build
 
-dev-frontend:
-	cd frontend && npm run dev
+## Start FastAPI locally.
+backend:
+	@if [ ! -x "$(BACKEND_PY)" ]; then echo "Backend venv missing. Run: make backend-install"; exit 1; fi
+	@cd $(BACKEND_DIR) && ../$(BACKEND_PY) -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-# Quality checks
-test: test-backend
+## Start the React/Vite frontend locally.
+frontend:
+	@if [ ! -f "$(FRONTEND_DIR)/package.json" ]; then echo "No frontend/package.json found."; exit 1; fi
+	@cd $(FRONTEND_DIR) && $(NPM) run dev
 
+## Train the CI/CD failure classification model.
+train-model:
+	@if [ ! -x "$(BACKEND_PY)" ]; then echo "Backend venv missing. Run: make backend-install"; exit 1; fi
+	@cd $(BACKEND_DIR) && ../$(BACKEND_PY) app/ml/train_failure_model.py
+
+## Run backend and frontend tests where configured.
+test: test-backend test-frontend
+
+## Run backend pytest suite.
 test-backend:
-	cd backend && $(BACKEND_PY) -m pytest tests -v --cov=app --cov-report=term-missing
+	@if [ ! -x "$(BACKEND_PY)" ]; then echo "Backend venv missing. Run: make backend-install"; exit 1; fi
+	@cd $(BACKEND_DIR) && ../$(BACKEND_PY) -m pytest tests -q
 
+## Run frontend tests only if package.json defines a test script.
+test-frontend:
+	@if [ ! -f "$(FRONTEND_DIR)/package.json" ]; then echo "No frontend/package.json found; skipping frontend tests."; exit 0; fi
+	@cd $(FRONTEND_DIR) && if node -e "process.exit(require('./package.json').scripts && require('./package.json').scripts.test ? 0 : 1)"; then $(NPM) test; else echo "No frontend test script configured; skipping."; fi
+
+## Run configured backend and frontend lint commands.
 lint: lint-backend lint-frontend
 
+## Run backend linters if installed in the backend virtualenv.
 lint-backend:
-	cd backend && $(BACKEND_PY) -m flake8 app --max-line-length=120
-	cd backend && $(BACKEND_PY) -m mypy app --ignore-missing-imports
+	@if [ ! -x "$(BACKEND_PY)" ]; then echo "Backend venv missing; skipping backend lint."; exit 0; fi
+	@cd $(BACKEND_DIR) && if ../$(BACKEND_PY) -m flake8 --version >/dev/null 2>&1; then ../$(BACKEND_PY) -m flake8 app tests --max-line-length=120; else echo "flake8 not installed; skipping."; fi
+	@cd $(BACKEND_DIR) && if ../$(BACKEND_PY) -m mypy --version >/dev/null 2>&1; then ../$(BACKEND_PY) -m mypy app --ignore-missing-imports; else echo "mypy not installed; skipping."; fi
 
+## Run frontend lint script if configured.
 lint-frontend:
-	cd frontend && npm run lint
+	@if [ ! -f "$(FRONTEND_DIR)/package.json" ]; then echo "No frontend/package.json found; skipping frontend lint."; exit 0; fi
+	@cd $(FRONTEND_DIR) && if node -e "process.exit(require('./package.json').scripts && require('./package.json').scripts.lint ? 0 : 1)"; then $(NPM) run lint; else echo "No frontend lint script configured; skipping."; fi
 
-build: build-frontend
+## Run configured formatters.
+format: format-backend format-frontend
 
-build-frontend:
-	cd frontend && npm run build
+## Run backend formatter if black or ruff is installed.
+format-backend:
+	@if [ ! -x "$(BACKEND_PY)" ]; then echo "Backend venv missing; skipping backend format."; exit 0; fi
+	@cd $(BACKEND_DIR) && if ../$(BACKEND_PY) -m black --version >/dev/null 2>&1; then ../$(BACKEND_PY) -m black app tests; elif ../$(BACKEND_PY) -m ruff --version >/dev/null 2>&1; then ../$(BACKEND_PY) -m ruff format app tests; else echo "No backend formatter configured; skipping."; fi
 
-# Docker
-docker-up:
-	docker compose up -d --build
+## Run frontend formatter script if configured.
+format-frontend:
+	@if [ ! -f "$(FRONTEND_DIR)/package.json" ]; then echo "No frontend/package.json found; skipping frontend format."; exit 0; fi
+	@cd $(FRONTEND_DIR) && if node -e "process.exit(require('./package.json').scripts && require('./package.json').scripts.format ? 0 : 1)"; then $(NPM) run format; else echo "No frontend format script configured; skipping."; fi
 
+## Build frontend production bundle.
+build:
+	@if [ ! -f "$(FRONTEND_DIR)/package.json" ]; then echo "No frontend/package.json found; skipping frontend build."; exit 0; fi
+	@cd $(FRONTEND_DIR) && $(NPM) run build
+
+## Build Docker images if Docker Compose is available.
+docker-build:
+	@if [ -z "$(COMPOSE)" ]; then echo "Docker Compose is not available."; exit 1; fi
+	$(COMPOSE) build
+
+## Remove safe generated cache/build files only. Keeps source, tests, docs, env examples, datasets, models, dependencies, and DB volumes.
+clean:
+	@find . -type d \( -name "__pycache__" -o -name ".pytest_cache" -o -name ".mypy_cache" -o -name ".ruff_cache" -o -name "htmlcov" \) -prune -exec rm -rf {} +
+	@find . -type f \( -name "*.pyc" -o -name "*.pyo" -o -name ".coverage" -o -name ".DS_Store" -o -name "*.log" \) -delete
+	@rm -rf $(FRONTEND_DIR)/dist $(FRONTEND_DIR)/build $(FRONTEND_DIR)/node_modules/.cache
+	@rm -rf dist build htmlcov
+	@echo "Removed safe generated cache/build files."
+
+## Stop Docker Compose services.
 docker-down:
-	docker compose down
+	@if [ -z "$(COMPOSE)" ]; then echo "Docker Compose is not available."; exit 1; fi
+	$(COMPOSE) down
 
+## Show Docker Compose logs.
 docker-logs:
-	docker compose logs -f
+	@if [ -z "$(COMPOSE)" ]; then echo "Docker Compose is not available."; exit 1; fi
+	$(COMPOSE) logs -f
 
-docker-clean:
-	docker compose down -v --rmi local
-
-# Cleanup
-clean: clean-python clean-node
-
-clean-python:
-	$(PYTHON) -c "import shutil; [shutil.rmtree(path, ignore_errors=True) for path in ('backend/.venv', 'backend/venv', 'backend/.pytest_cache', 'backend/.mypy_cache')]"
-	find backend -type d \( -name '__pycache__' -o -name '.pytest_cache' -o -name '.mypy_cache' \) -prune -exec rm -rf {} +
-	find backend -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
-
-clean-node:
-	$(PYTHON) -c "import shutil; [shutil.rmtree(path, ignore_errors=True) for path in ('frontend/node_modules', 'frontend/dist', 'frontend/.vite', 'frontend/.eslintcache')]"
-
-clean-share: clean
-	@echo "Generated Python and Node files removed. The project is ready to share."
+## Stop containers and remove safe generated files only. Does not delete Docker volumes or databases.
+reset: docker-down clean
+	@echo "Reset complete. Docker volumes and database files were not removed."

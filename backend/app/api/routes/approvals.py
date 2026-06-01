@@ -27,6 +27,8 @@ from app.core.logging import logger
 from app.core.security import require_permission
 from app.models.models import ApprovalRequest, Execution
 from app.schemas.schemas import ApprovalDecision, ApprovalRequestOut
+from app.services import audit_service
+from app.services.fix_pr_service import FixPRServiceError, create_fix_pr_for_failure, mark_fix_pr_rejected
 
 router = APIRouter()
 
@@ -79,7 +81,8 @@ async def create_approval_request(
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
-@router.get("/", response_model=list[ApprovalRequestOut])
+@router.get("", response_model=list[ApprovalRequestOut])
+@router.get("/", response_model=list[ApprovalRequestOut], include_in_schema=False)
 async def list_pending_approvals(
     status_filter: Optional[str] = "pending",
     db: AsyncSession = Depends(get_db),
@@ -149,7 +152,22 @@ async def decide_approval(
     if decision.approved:
         # ── Execute the tool ──────────────────────────────────────────────────
         tool_input = json.loads(record.tool_input or "{}")
-        exec_details, exec_status = _dispatch_tool(record.tool_name or "", tool_input)
+        if record.tool_name == "github_create_fix_pr":
+            try:
+                result = await create_fix_pr_for_failure(
+                    db,
+                    tool_input.get("workflow_failure_id", ""),
+                    {"username": decider, "role": current_user.get("role")},
+                    bypass_approval=True,
+                    audit=False,
+                )
+                exec_details = json.dumps(result, ensure_ascii=False)
+                exec_status = "completed" if result.get("status") in {"fix_pr_created", "already_created"} else "failed"
+            except FixPRServiceError as exc:
+                exec_details = json.dumps({"error": str(exc)}, ensure_ascii=False)
+                exec_status = "failed"
+        else:
+            exec_details, exec_status = _dispatch_tool(record.tool_name or "", tool_input)
 
         record.status = "approved"
         record.decided_by = decider
@@ -171,6 +189,15 @@ async def decide_approval(
             completed_at=datetime.now(tz=timezone.utc),
         )
         db.add(execution)
+        await audit_service.log_approval_decision(
+            db,
+            approval_id=record.id,
+            decision="approved",
+            tool_name=record.tool_name or "",
+            actor=decider,
+            session_id=record.session_id,
+            reason=decision.note,
+        )
         await db.flush()
 
         logger.info(
@@ -191,6 +218,15 @@ async def decide_approval(
         }
     else:
         # ── Reject / cancel ───────────────────────────────────────────────────
+        tool_input = json.loads(record.tool_input or "{}")
+        if record.tool_name == "github_create_fix_pr" and tool_input.get("workflow_failure_id"):
+            await mark_fix_pr_rejected(
+                db,
+                tool_input["workflow_failure_id"],
+                decided_by=decider,
+                note=decision.note,
+            )
+
         record.status = "rejected"
         record.decided_by = decider
         record.decision_note = decision.note
@@ -211,6 +247,15 @@ async def decide_approval(
             completed_at=now,
         )
         db.add(execution)
+        await audit_service.log_approval_decision(
+            db,
+            approval_id=record.id,
+            decision="rejected",
+            tool_name=record.tool_name or "",
+            actor=decider,
+            session_id=record.session_id,
+            reason=decision.note,
+        )
         await db.flush()
 
         logger.info(
@@ -248,7 +293,16 @@ def _dispatch_tool(tool_name: str, tool_input: dict) -> tuple[str, str]:
             details = run_container(**tool_input)
         elif tool_name == "github_trigger_workflow":
             from app.tools.github_tool import trigger_workflow
-            details = trigger_workflow(**tool_input)
+            details = trigger_workflow(
+                repo_full_name=tool_input.get("repo_full_name", ""),
+                workflow_id=tool_input.get("workflow_id", ""),
+                ref=tool_input.get("ref", "main"),
+                inputs=tool_input.get("inputs") if isinstance(tool_input.get("inputs"), dict) else None,
+            )
+        elif tool_name == "github_create_workflow_pr":
+            from app.tools.github_tool import create_workflow_pr
+            result = create_workflow_pr(tool_input.get("repo_full_name", ""))
+            details = json.dumps(result, ensure_ascii=False, default=str)
         elif tool_name == "execute_shell_command":
             from app.tools.shell_tool import execute_safe_shell_command
             details = execute_safe_shell_command(tool_input.get("command", ""))

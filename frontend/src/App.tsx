@@ -1,15 +1,29 @@
-import { useEffect, type ReactNode } from 'react'
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
-import { ShieldAlert } from 'lucide-react'
-import Layout from '@/components/layout/Layout'
-import ChatPage from '@/pages/ChatPage'
-import ApprovalsPage from '@/pages/ApprovalsPage'
-import ExecutionsPage from '@/pages/ExecutionsPage'
-import LoginPage from '@/pages/LoginPage'
-import UsersPage from '@/pages/UsersPage'
-import { useAuthStore } from '@/store/authStore'
-import { useThemeStore } from '@/store/themeStore'
-import { canAccessPath, defaultPathForRole, getRoleDefinition } from '@/lib/rbac'
+import { useEffect, type ReactNode } from "react";
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
+import { ShieldAlert } from "lucide-react";
+import Layout from "@/components/layout/Layout";
+import ChatPage from "@/pages/ChatPage";
+import ApprovalsPage from "@/pages/ApprovalsPage";
+import DiagnosisPage from "@/pages/DiagnosisPage";
+import ExecutionsPage from "@/pages/ExecutionsPage";
+import LoginPage from "@/pages/LoginPage";
+import MultiAgentPage from "@/pages/MultiAgentPage";
+import RepositorySetupPage from "@/pages/RepositorySetupPage";
+import UsersPage from "@/pages/UsersPage";
+import WorkflowFailuresPage from "@/pages/WorkflowFailuresPage";
+import { useAuthStore } from "@/store/authStore";
+import { useThemeStore } from "@/store/themeStore";
+import {
+  canAccessPath,
+  defaultPathForRole,
+  getRoleDefinition,
+} from "@/lib/rbac";
 
 function AppLoader() {
   return (
@@ -19,81 +33,179 @@ function AppLoader() {
         <span className="text-sm text-ink-muted">Checking secure session…</span>
       </div>
     </div>
-  )
+  );
 }
 
 function AccessDenied() {
-  const { user } = useAuthStore()
-  const role = getRoleDefinition(user?.role)
+  const { user } = useAuthStore();
+  const role = getRoleDefinition(user?.role);
   return (
     <div className="flex h-full items-center justify-center bg-surface-900 px-4">
       <div className="glass-panel max-w-lg p-8 text-center">
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-3xl border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-300">
           <ShieldAlert size={28} />
         </div>
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-600 dark:text-amber-300">Access restricted</p>
-        <h1 className="mt-3 text-2xl font-semibold text-ink">This option is not enabled for {role.label} accounts.</h1>
-        <p className="mt-3 text-sm leading-6 text-ink-muted">{role.description}</p>
-        <a href={defaultPathForRole(user?.role)} className="mt-6 inline-flex rounded-2xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:bg-primary-500">
+        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-600 dark:text-amber-300">
+          Access restricted
+        </p>
+        <h1 className="mt-3 text-2xl font-semibold text-ink">
+          This option is not enabled for {role.label} accounts.
+        </h1>
+        <p className="mt-3 text-sm leading-6 text-ink-muted">
+          {role.description}
+        </p>
+        <a
+          href={defaultPathForRole(user?.role)}
+          className="mt-6 inline-flex rounded-2xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:bg-primary-500"
+        >
           Go to your workspace
         </a>
       </div>
     </div>
-  )
+  );
 }
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuthStore()
-  const location = useLocation()
+  const { isAuthenticated, isLoading } = useAuthStore();
+  const location = useLocation();
 
-  if (isLoading) return <AppLoader />
-  return isAuthenticated ? <>{children}</> : <Navigate to="/login" state={{ from: location }} replace />
+  if (isLoading) return <AppLoader />;
+  return isAuthenticated ? (
+    <>{children}</>
+  ) : (
+    <Navigate to="/login" state={{ from: location }} replace />
+  );
 }
 
 function RoleProtectedRoute({ children }: { children: ReactNode }) {
-  const { user } = useAuthStore()
-  const location = useLocation()
-  return canAccessPath(user?.role, location.pathname) ? <>{children}</> : <AccessDenied />
+  const { user } = useAuthStore();
+  const location = useLocation();
+  return canAccessPath(user?.role, location.pathname) ? (
+    <>{children}</>
+  ) : (
+    <AccessDenied />
+  );
+}
+
+function AppRoutes() {
+  const { checkAuth, markUnauthenticated } = useAuthStore();
+  const location = useLocation();
+
+  useEffect(() => {
+    const handleUnauthorized = () => markUnauthenticated();
+    window.addEventListener("devops-auth:unauthorized", handleUnauthorized);
+    return () =>
+      window.removeEventListener(
+        "devops-auth:unauthorized",
+        handleUnauthorized,
+      );
+  }, [markUnauthenticated]);
+
+  useEffect(() => {
+    if (location.pathname === "/login") {
+      markUnauthenticated();
+      return;
+    }
+    checkAuth();
+  }, [checkAuth, location.pathname, markUnauthenticated]);
+
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <Layout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<Navigate to="/chat" replace />} />
+        <Route
+          path="chat"
+          element={
+            <RoleProtectedRoute>
+              <ChatPage />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="multi-agent"
+          element={
+            <RoleProtectedRoute>
+              <MultiAgentPage />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="diagnosis"
+          element={
+            <RoleProtectedRoute>
+              <DiagnosisPage />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="repository-setup"
+          element={
+            <RoleProtectedRoute>
+              <RepositorySetupPage />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="workflow-failures"
+          element={
+            <RoleProtectedRoute>
+              <WorkflowFailuresPage />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="approvals"
+          element={
+            <RoleProtectedRoute>
+              <ApprovalsPage />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="executions"
+          element={
+            <RoleProtectedRoute>
+              <ExecutionsPage />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="users"
+          element={
+            <RoleProtectedRoute>
+              <UsersPage />
+            </RoleProtectedRoute>
+          }
+        />
+      </Route>
+    </Routes>
+  );
 }
 
 export default function App() {
-  const { checkAuth, markUnauthenticated } = useAuthStore()
-  const { syncSystemTheme } = useThemeStore()
+  const { syncSystemTheme } = useThemeStore();
 
   useEffect(() => {
-    checkAuth()
-    const handleUnauthorized = () => markUnauthenticated()
-    window.addEventListener('devops-auth:unauthorized', handleUnauthorized)
-    return () => window.removeEventListener('devops-auth:unauthorized', handleUnauthorized)
-  }, [checkAuth, markUnauthenticated])
-
-  useEffect(() => {
-    const media = window.matchMedia('(prefers-color-scheme: dark)')
-    const sync = () => syncSystemTheme()
-    sync()
-    media.addEventListener?.('change', sync)
-    return () => media.removeEventListener?.('change', sync)
-  }, [syncSystemTheme])
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const sync = () => syncSystemTheme();
+    sync();
+    media.addEventListener?.("change", sync);
+    return () => media.removeEventListener?.("change", sync);
+  }, [syncSystemTheme]);
 
   return (
-    <BrowserRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <Layout />
-            </ProtectedRoute>
-          }
-        >
-          <Route index element={<Navigate to="/chat" replace />} />
-          <Route path="chat" element={<RoleProtectedRoute><ChatPage /></RoleProtectedRoute>} />
-          <Route path="approvals" element={<RoleProtectedRoute><ApprovalsPage /></RoleProtectedRoute>} />
-          <Route path="executions" element={<RoleProtectedRoute><ExecutionsPage /></RoleProtectedRoute>} />
-          <Route path="users" element={<RoleProtectedRoute><UsersPage /></RoleProtectedRoute>} />
-        </Route>
-      </Routes>
+    <BrowserRouter
+      future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+    >
+      <AppRoutes />
     </BrowserRouter>
-  )
+  );
 }

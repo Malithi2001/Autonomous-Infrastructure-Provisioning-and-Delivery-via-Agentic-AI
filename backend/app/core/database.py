@@ -5,7 +5,7 @@ import ssl
 from typing import Any, AsyncGenerator
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
@@ -82,9 +82,35 @@ async def init_db() -> None:
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            await ensure_schema_compatibility(conn)
         await ensure_default_admin()
     except Exception as exc:
         logger.warning("database.init.skipped", error=str(exc))
+
+
+async def ensure_schema_compatibility(conn) -> None:
+    """
+    Apply small additive schema fixes for demo databases created before newer
+    ORM fields existed. Base.metadata.create_all() does not alter existing
+    tables, so nullable columns added during MVP development need this shim.
+    """
+    dialect = conn.dialect.name
+    if dialect == "postgresql":
+        await conn.execute(
+            text(
+                "ALTER TABLE workflow_failures "
+                "ADD COLUMN IF NOT EXISTS recommendation_json TEXT"
+            )
+        )
+        return
+
+    if dialect == "sqlite":
+        result = await conn.execute(text("PRAGMA table_info(workflow_failures)"))
+        columns = {row[1] for row in result.fetchall()}
+        if "recommendation_json" not in columns:
+            await conn.execute(
+                text("ALTER TABLE workflow_failures ADD COLUMN recommendation_json TEXT")
+            )
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -113,7 +139,8 @@ async def ensure_default_admin() -> None:
             "role": UserRole.ADMIN,
         },
         {
-            "email": "operator@devops.local",
+            "email": "operator@devops.example.com",
+            "legacy_email": "operator@devops.local",
             "username": "operator",
             "password": "operator123",
             "role": UserRole.OPERATOR,
@@ -125,7 +152,8 @@ async def ensure_default_admin() -> None:
             "role": UserRole.DEVELOPER,
         },
         {
-            "email": "viewer@company.local",
+            "email": "viewer@company.example.com",
+            "legacy_email": "viewer@company.local",
             "username": "viewer",
             "password": "viewer123",
             "role": UserRole.VIEWER,
@@ -137,16 +165,24 @@ async def ensure_default_admin() -> None:
 
     async with AsyncSessionLocal() as session:
         created = []
+        updated = []
         for demo in demo_users:
+            legacy_email = demo.get("legacy_email")
+            lookup_conditions = [
+                User.username == demo["username"],
+                User.email == demo["email"],
+            ]
+            if legacy_email:
+                lookup_conditions.append(User.email == legacy_email)
+
             result = await session.execute(
-                select(User).where(
-                    or_(
-                        User.username == demo["username"],
-                        User.email == demo["email"],
-                    )
-                )
+                select(User).where(or_(*lookup_conditions))
             )
-            if result.scalar_one_or_none():
+            user = result.scalar_one_or_none()
+            if user:
+                if legacy_email and user.email == legacy_email:
+                    user.email = demo["email"]
+                    updated.append(demo["username"])
                 continue
 
             session.add(
@@ -160,6 +196,6 @@ async def ensure_default_admin() -> None:
             )
             created.append(demo["username"])
 
-        if created:
+        if created or updated:
             await session.commit()
-            logger.info("database.default_users.seeded", usernames=created)
+            logger.info("database.default_users.seeded", usernames=created, updated_usernames=updated)

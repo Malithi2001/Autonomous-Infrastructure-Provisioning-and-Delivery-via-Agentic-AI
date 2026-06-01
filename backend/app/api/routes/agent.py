@@ -2,24 +2,39 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.agent_types import AgentResult, AgentTask
 from app.agents.devops_agent import _agent_pool, get_or_create_agent
+from app.agents.orchestration_agent import OrchestrationAgent
+from app.agents.tools_registry import HITLApprovalRequired
+from app.api.routes.approvals import create_approval_request
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, get_db
 from app.core.security import ACCESS_TOKEN_COOKIE_NAME, decode_token, has_permission, require_permission
 from app.schemas.schemas import ChatRequest, ChatResponse, IntermediateStep
+from app.services import audit_service
 from app.services.execution_service import complete_execution, create_execution
 from app.services.memory_service import DBChatMessageHistory
+from app.core.logging import logger
 
 router = APIRouter()
 
 _ws_connections: dict[str, set[WebSocket]] = {}
 _MAX_CONNECTIONS_PER_USER = 5
+
+
+class OrchestrationRequest(BaseModel):
+    """Request body for deterministic multi-agent orchestration tests."""
+
+    message: str
+    context: dict[str, Any] = Field(default_factory=dict)
 
 
 def _is_openai_quota_error(exc: Exception) -> bool:
@@ -70,6 +85,102 @@ def _serialize_intermediate_steps(steps: list) -> list[IntermediateStep]:
     return serialized
 
 
+@router.post("/orchestrate", response_model=AgentResult)
+async def orchestrate(
+    request: OrchestrationRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_permission("agent:chat")),
+):
+    """Route a request through the deterministic multi-agent orchestration layer."""
+    actor = current_user.get("username") or current_user.get("sub") or "unknown"
+    task = AgentTask(
+        message=request.message,
+        user_id=current_user.get("sub"),
+        session_id=request.context.get("session_id"),
+        context=request.context,
+    )
+    try:
+        orchestrator = OrchestrationAgent()
+        approval_plan = orchestrator.approval_plan(task)
+        if approval_plan:
+            approval = await create_approval_request(
+                db=db,
+                session_id=task.session_id or str(uuid.uuid4()),
+                requested_by=actor,
+                tool_name=approval_plan["tool_name"],
+                tool_input=approval_plan["tool_input"],
+                action=approval_plan["action"],
+                risk_level=approval_plan["risk_level"],
+                summary=approval_plan["summary"],
+                timeout_seconds=settings.HITL_APPROVAL_TIMEOUT_SECONDS,
+            )
+            result = AgentResult(
+                selected_agent=approval_plan["selected_agent"],
+                intent=approval_plan["intent"],
+                risk_level=approval_plan["risk_level"],
+                success=False,
+                result=(
+                    "Human approval is required before executing this action. "
+                    f"Approval request {approval.id} is pending."
+                ),
+                metadata={
+                    "approval_required": True,
+                    "approval_id": approval.id,
+                    "proposed_tool_call": approval_plan["tool_name"],
+                    "approval_details": approval_plan["details"],
+                },
+            )
+        else:
+            result = orchestrator.handle(task)
+        try:
+            await audit_service.log_multi_agent_execution(
+                db,
+                message=request.message,
+                context=request.context,
+                selected_agent=result.selected_agent,
+                intent=result.intent,
+                risk_level=result.risk_level,
+                success=result.success,
+                result=result.result,
+                metadata=result.metadata,
+                actor=actor,
+                user_id=current_user.get("sub"),
+                session_id=task.session_id,
+                source="api",
+            )
+        except audit_service.AuditError as audit_exc:
+            await db.rollback()
+            logger.warning("audit.multi_agent.skipped", error=str(audit_exc))
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        safe_error = "Agent orchestration failed. Please try again."
+        try:
+            await audit_service.log_multi_agent_execution(
+                db,
+                message=request.message,
+                context=request.context,
+                selected_agent="orchestration_agent",
+                intent="orchestration_error",
+                risk_level="low",
+                success=False,
+                result=safe_error,
+                metadata={"error_type": exc.__class__.__name__},
+                actor=actor,
+                user_id=current_user.get("sub"),
+                session_id=task.session_id,
+                source="api",
+            )
+        except audit_service.AuditError as audit_exc:
+            await db.rollback()
+            logger.warning("audit.multi_agent_error.skipped", error=str(audit_exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=safe_error,
+        ) from exc
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
@@ -92,7 +203,45 @@ async def chat(
             await db.commit()
 
         agent = get_or_create_agent(session_id=session_id, user_role=user_role)
-        result = await agent.chat(request.message, db=db)
+        try:
+            result = await agent.chat(request.message, db=db)
+        except HITLApprovalRequired as approval_exc:
+            approval = await create_approval_request(
+                db=db,
+                session_id=session_id,
+                requested_by=current_user.get("username", current_user.get("sub", "unknown")),
+                tool_name=approval_exc.tool_name,
+                tool_input=approval_exc.tool_input,
+                action=approval_exc.summary,
+                risk_level=approval_exc.risk_level,
+                summary=approval_exc.summary,
+                timeout_seconds=settings.HITL_APPROVAL_TIMEOUT_SECONDS,
+            )
+            if execution:
+                execution.status = "pending"
+                execution.summary = f"Approval required: {approval_exc.summary}"
+                execution.details = json.dumps(
+                    {
+                        "approval_id": approval.id,
+                        "tool_name": approval_exc.tool_name,
+                        "risk_level": approval_exc.risk_level,
+                        "tool_input": approval_exc.tool_input,
+                    },
+                    ensure_ascii=False,
+                )
+                execution.approval_id = approval.id
+                await db.flush()
+            await db.commit()
+            return ChatResponse(
+                output=(
+                    f"Approval required before running `{approval_exc.tool_name}`. "
+                    f"Risk level: {approval_exc.risk_level}. {approval_exc.summary}"
+                ),
+                session_id=session_id,
+                intermediate_steps=[],
+                requires_approval=True,
+                approval_id=approval.id,
+            )
 
         if execution:
             await complete_execution(

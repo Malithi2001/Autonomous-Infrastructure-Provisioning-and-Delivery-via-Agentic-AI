@@ -12,7 +12,6 @@ from __future__ import annotations
 import uuid
 from unittest.mock import patch, MagicMock
 
-import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 
