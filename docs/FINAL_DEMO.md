@@ -12,6 +12,7 @@ Show that the system can:
 - generate GitHub Actions workflows from repository structure,
 - scan GitHub repositories,
 - create workflow setup pull requests,
+- demonstrate User -> Orchestration Agent -> Specialized Agent -> Tool/Service -> Result,
 - store workflow failure diagnosis results,
 - recommend safe fixes,
 - create fix PRs with approval where required,
@@ -115,6 +116,104 @@ Show:
 
 - README project title and system overview.
 - Frontend dashboard navigation.
+
+## Step 1A: Multi-Agent Architecture Demo
+
+Open:
+
+```text
+Multi-Agent
+```
+
+Explain the supervisor-required flow:
+
+```text
+User
+  -> Orchestration Agent
+  -> Specialized Agent
+  -> Tool/Service Call
+  -> Result
+  -> Audit Log / Approval if needed
+```
+
+Explain the agents:
+
+- **Orchestration Agent** receives the request, detects intent, selects one specialized agent, and returns a structured response.
+- **CLI Agent** handles Docker/container commands through the existing Docker tool.
+- **CI/CD Agent** analyzes file lists and generates GitHub Actions workflow YAML locally.
+- **Diagnosis Agent** predicts CI/CD failure labels using the trained ML model and returns fix guidance.
+- **GitHub Agent** scans repositories and prepares GitHub workflow/fix PR actions through safe GitHub services.
+
+Run the quick demo buttons:
+
+```text
+Show running containers
+Generate CI workflow for React project
+Analyze npm missing test script log
+Scan GitHub repository
+```
+
+For each result, show:
+
+- `selected_agent`
+- `intent`
+- `risk_level`
+- `success`
+- `tool_called` or proposed tool call
+- result text
+- expandable metadata JSON
+
+Sample API commands:
+
+```bash
+curl -i -sS -b /tmp/devops_demo_cookie.txt \
+  -X POST http://127.0.0.1:8000/api/v1/agent/orchestrate \
+  -H "Content-Type: application/json" \
+  -d '{"message":"show running containers","context":{}}'
+```
+
+```bash
+curl -i -sS -b /tmp/devops_demo_cookie.txt \
+  -X POST http://127.0.0.1:8000/api/v1/agent/orchestrate \
+  -H "Content-Type: application/json" \
+  -d '{"message":"generate CI workflow for React project","context":{"files":["package.json","package-lock.json","src/App.jsx","vite.config.js"]}}'
+```
+
+```bash
+curl -i -sS -b /tmp/devops_demo_cookie.txt \
+  -X POST http://127.0.0.1:8000/api/v1/agent/orchestrate \
+  -H "Content-Type: application/json" \
+  -d '{"message":"analyze this log","context":{"log_text":"npm ERR! Missing script: test"}}'
+```
+
+```bash
+curl -i -sS -b /tmp/devops_demo_cookie.txt \
+  -X POST http://127.0.0.1:8000/api/v1/agent/orchestrate \
+  -H "Content-Type: application/json" \
+  -d '{"message":"scan repository","context":{"repo_full_name":"owner/repo"}}'
+```
+
+Then run a medium-risk action:
+
+```bash
+curl -i -sS -b /tmp/devops_demo_cookie.txt \
+  -X POST http://127.0.0.1:8000/api/v1/agent/orchestrate \
+  -H "Content-Type: application/json" \
+  -d '{"message":"create workflow PR","context":{"repo_full_name":"owner/repo"}}'
+```
+
+Expected result:
+
+```text
+selected_agent: github_agent
+intent: github_create_workflow_pr
+risk_level: medium
+approval_required: true
+```
+
+Explain:
+
+Low-risk actions run directly. Medium/high-risk actions create a pending approval instead of modifying GitHub immediately.
 
 ## Step 2: Train the Model
 
@@ -430,6 +529,7 @@ Audit
 
 Show recent records for:
 
+- multi-agent orchestration,
 - model prediction,
 - repository scan,
 - workflow generation,
@@ -443,6 +543,14 @@ Show recent records for:
 Explain:
 
 Every important agent/GitHub/model action is stored as an execution/audit record with action summary, tool name, status, actor, input summary, output summary, and timestamp.
+
+Safety explanation:
+
+- RBAC controls who can access chat, approvals, repository automation, users, and audit logs.
+- HITL approval gates medium/high-risk automation before execution.
+- Audit logging stores summarized inputs/outputs without full secrets or large raw logs.
+- GitHub repository changes use branches and pull requests, not direct pushes to `main` or `master`.
+- Tokens, private keys, credentials, and secret-looking values are redacted before logging where possible.
 
 ## Step 12: Closing Summary
 

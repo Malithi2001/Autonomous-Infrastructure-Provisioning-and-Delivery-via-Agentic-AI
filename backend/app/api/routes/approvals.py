@@ -293,7 +293,16 @@ def _dispatch_tool(tool_name: str, tool_input: dict) -> tuple[str, str]:
             details = run_container(**tool_input)
         elif tool_name == "github_trigger_workflow":
             from app.tools.github_tool import trigger_workflow
-            details = trigger_workflow(**tool_input)
+            details = trigger_workflow(
+                repo_full_name=tool_input.get("repo_full_name", ""),
+                workflow_id=tool_input.get("workflow_id", ""),
+                ref=tool_input.get("ref", "main"),
+                inputs=tool_input.get("inputs") if isinstance(tool_input.get("inputs"), dict) else None,
+            )
+        elif tool_name == "github_create_workflow_pr":
+            from app.tools.github_tool import create_workflow_pr
+            result = create_workflow_pr(tool_input.get("repo_full_name", ""))
+            details = json.dumps(result, ensure_ascii=False, default=str)
         elif tool_name == "execute_shell_command":
             from app.tools.shell_tool import execute_safe_shell_command
             details = execute_safe_shell_command(tool_input.get("command", ""))

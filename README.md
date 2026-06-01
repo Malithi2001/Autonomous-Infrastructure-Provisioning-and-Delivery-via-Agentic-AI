@@ -46,6 +46,7 @@ The project focuses on these research questions:
 
 ```text
 React Frontend
+  - Multi-Agent Orchestration
   - CI/CD Assistant
   - Repository CI/CD Setup
   - Workflow Failures
@@ -88,6 +89,49 @@ Main technologies:
 - Automation: GitHub REST API, GitHub Actions
 - Storage: SQLite for local demo, PostgreSQL/Supabase compatible schema for deployment
 - Optional services: Redis, Celery, Docker Compose
+
+## Multi-Agent Architecture
+
+The supervisor demo uses a deterministic multi-agent flow:
+
+```text
+User
+  -> Orchestration Agent
+  -> Specialized Agent
+  -> Tool/Service Call
+  -> Result
+  -> Audit Log / Approval if needed
+```
+
+The orchestration endpoint is:
+
+```text
+POST /api/v1/agent/orchestrate
+```
+
+Agents:
+
+- **Orchestration Agent** receives the user request, detects intent using deterministic routing rules, selects one specialized agent, and returns a structured response.
+- **CLI Agent** handles safe Docker/command-oriented requests such as listing running containers and reading container logs through the existing Docker tool.
+- **CI/CD Agent** handles local repository file analysis and GitHub Actions workflow YAML generation by reusing the repository analyzer and workflow generator services.
+- **Diagnosis Agent** analyzes CI/CD logs using the trained failure classification model and fix recommendation service.
+- **GitHub Agent** handles GitHub repository scan, workflow PR creation, workflow monitoring actions, workflow dispatch, and fix PR creation by reusing existing GitHub tools/services.
+
+Safety controls:
+
+- **RBAC** protects API access by user role and permission.
+- **HITL approval** gates medium/high-risk actions such as workflow PR creation, fix PR creation, and workflow triggering.
+- **Audit logging** records orchestration requests, selected agent, detected intent, risk level, tool/service used, status, and summarized result.
+- **No direct push to main/master**: repository modifications happen through a new branch and pull request.
+- **Secrets redaction** prevents tokens, private keys, credentials, and large raw logs from being stored in audit details.
+
+Demo commands for the Multi-Agent page or `/api/v1/agent/orchestrate`:
+
+- `show running containers`
+- `generate CI workflow`
+- `analyze this log`
+- `scan repository`
+- `create workflow PR`
 
 ## Trained Model Explanation
 
@@ -435,6 +479,33 @@ curl -i -sS -b /tmp/devops_demo_cookie.txt \
   -d '{"files":["package.json","package-lock.json","src/App.tsx","vite.config.ts","Dockerfile"]}'
 ```
 
+Run multi-agent orchestration:
+
+```bash
+curl -i -sS -b /tmp/devops_demo_cookie.txt \
+  -X POST http://127.0.0.1:8000/api/v1/agent/orchestrate \
+  -H "Content-Type: application/json" \
+  -d '{"message":"show running containers","context":{}}'
+```
+
+Generate a React workflow through the CI/CD Agent:
+
+```bash
+curl -i -sS -b /tmp/devops_demo_cookie.txt \
+  -X POST http://127.0.0.1:8000/api/v1/agent/orchestrate \
+  -H "Content-Type: application/json" \
+  -d '{"message":"generate CI workflow for React project","context":{"files":["package.json","package-lock.json","src/App.jsx","vite.config.js"]}}'
+```
+
+Diagnose an npm failure through the Diagnosis Agent:
+
+```bash
+curl -i -sS -b /tmp/devops_demo_cookie.txt \
+  -X POST http://127.0.0.1:8000/api/v1/agent/orchestrate \
+  -H "Content-Type: application/json" \
+  -d '{"message":"analyze this log","context":{"log_text":"npm ERR! Missing script: test"}}'
+```
+
 Scan GitHub repository:
 
 ```bash
@@ -451,6 +522,15 @@ curl -i -sS -b /tmp/devops_demo_cookie.txt \
   -X POST http://127.0.0.1:8000/api/v1/repositories/create-workflow-pr \
   -H "Content-Type: application/json" \
   -d '{"repo_full_name":"owner/repo"}'
+```
+
+Create workflow PR through the GitHub Agent approval gate:
+
+```bash
+curl -i -sS -b /tmp/devops_demo_cookie.txt \
+  -X POST http://127.0.0.1:8000/api/v1/agent/orchestrate \
+  -H "Content-Type: application/json" \
+  -d '{"message":"create workflow PR","context":{"repo_full_name":"owner/repo"}}'
 ```
 
 List workflow failures:
@@ -481,17 +561,19 @@ Recommended final demo:
 1. Train the model and show generated metrics.
 2. Start backend and frontend.
 3. Log in as an operator.
-4. Open CI/CD Assistant and paste a failed CI/CD log.
-5. Show predicted label, confidence, suggested fix, and recommendation.
-6. Open Repository CI/CD Setup.
-7. Enter a GitHub repository full name.
-8. Scan repository and show detected stack.
-9. Create a workflow setup PR and open the PR URL.
-10. Trigger or simulate a failed GitHub Actions run.
-11. Open Workflow Failures and show stored diagnosis.
-12. Create a fix PR if available.
-13. If approval is required, approve it from the Approvals page.
-14. Open Audit and show the recorded actions.
+4. Open Multi-Agent Orchestration and run quick demo commands.
+5. Show User -> Orchestration Agent -> Specialized Agent -> Tool/Service -> Result.
+6. Open CI/CD Assistant and paste a failed CI/CD log.
+7. Show predicted label, confidence, suggested fix, and recommendation.
+8. Open Repository CI/CD Setup.
+9. Enter a GitHub repository full name.
+10. Scan repository and show detected stack.
+11. Create a workflow setup PR and open the PR URL.
+12. Trigger or simulate a failed GitHub Actions run.
+13. Open Workflow Failures and show stored diagnosis.
+14. Create a fix PR if available.
+15. If approval is required, approve it from the Approvals page.
+16. Open Audit and show the recorded actions.
 
 Detailed script: `docs/FINAL_DEMO.md`.
 

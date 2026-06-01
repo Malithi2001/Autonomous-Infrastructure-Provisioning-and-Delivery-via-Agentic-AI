@@ -1,35 +1,99 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { Bot, CheckSquare, Clock, GitPullRequest, LogOut, SearchCode, Shield, Terminal, TriangleAlert, UsersRound } from 'lucide-react'
-import { useAuthStore } from '@/store/authStore'
-import { ThemeToggle } from '@/components/ui/ThemeToggle'
-import { getRoleDefinition, hasPermission } from '@/lib/rbac'
-import clsx from 'clsx'
+import { Outlet, NavLink, useNavigate } from "react-router-dom";
+import {
+  Bot,
+  CheckSquare,
+  Clock,
+  GitPullRequest,
+  LogOut,
+  Network,
+  SearchCode,
+  Shield,
+  Terminal,
+  TriangleAlert,
+  UsersRound,
+} from "lucide-react";
+import { useAuthStore } from "@/store/authStore";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { getRoleDefinition, hasPermission } from "@/lib/rbac";
+import clsx from "clsx";
 
 const navItems = [
-  { to: '/chat', icon: Terminal, label: 'Agent Chat', permission: 'agent:chat' as const },
-  { to: '/diagnosis', icon: SearchCode, label: 'CI/CD Assistant', permission: 'logs:read' as const },
-  { to: '/repository-setup', icon: GitPullRequest, label: 'Repository Setup', permission: 'executions:write' as const },
-  { to: '/workflow-failures', icon: TriangleAlert, label: 'Workflow Failures', permission: 'executions:read' as const },
-  { to: '/approvals', icon: CheckSquare, label: 'Approvals', permission: 'approvals:read' as const },
-  { to: '/executions', icon: Clock, label: 'Audit', permission: 'executions:read' as const },
-  { to: '/users', icon: UsersRound, label: 'Users & Roles', permission: 'users:manage' as const },
-]
+  {
+    to: "/chat",
+    icon: Terminal,
+    label: "Agent Chat",
+    permission: "agent:chat" as const,
+  },
+  {
+    to: "/multi-agent",
+    icon: Network,
+    label: "Multi-Agent",
+    permission: "agent:chat" as const,
+  },
+  {
+    to: "/diagnosis",
+    icon: SearchCode,
+    label: "CI/CD Assistant",
+    permission: "logs:read" as const,
+  },
+  {
+    to: "/repository-setup",
+    icon: GitPullRequest,
+    label: "Repository Setup",
+    permission: "executions:write" as const,
+  },
+  {
+    to: "/workflow-failures",
+    icon: TriangleAlert,
+    label: "Workflow Failures",
+    permission: "executions:read" as const,
+  },
+  {
+    to: "/approvals",
+    icon: CheckSquare,
+    label: "Approvals",
+    permission: "approvals:read" as const,
+  },
+  {
+    to: "/executions",
+    icon: Clock,
+    label: "Audit",
+    permission: "executions:read" as const,
+  },
+  {
+    to: "/users",
+    icon: UsersRound,
+    label: "Users & Roles",
+    permission: "users:manage" as const,
+  },
+];
 
 function RoleBadge({ role }: { role?: string }) {
-  const definition = getRoleDefinition(role)
-  return <span className={clsx('rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]', definition.badgeClass)}>{definition.label}</span>
+  const definition = getRoleDefinition(role);
+  return (
+    <span
+      className={clsx(
+        "rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]",
+        definition.badgeClass,
+      )}
+    >
+      {definition.label}
+    </span>
+  );
 }
 
 export default function Layout() {
-  const { user, logout } = useAuthStore()
-  const navigate = useNavigate()
-  const role = getRoleDefinition(user?.role)
-  const visibleNavItems = navItems.filter((item) => hasPermission(user?.role, item.permission))
+  const { user, logout } = useAuthStore();
+  const navigate = useNavigate();
+  const role = getRoleDefinition(user?.role);
+  const visibleNavItems = navItems.filter((item) =>
+    hasPermission(user?.role, item.permission),
+  );
 
   const handleLogout = async () => {
-    await logout()
-    navigate('/login', { replace: true })
-  }
+    await logout();
+    navigate("/login", { replace: true });
+  };
 
   return (
     <div className="flex h-screen overflow-hidden app-bg">
@@ -37,11 +101,18 @@ export default function Layout() {
         <div className="border-b border-surface-600/80 px-5 py-5">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-primary-500/30 bg-primary-500/10 shadow-glow">
-              <Bot size={21} className="text-primary-500 dark:text-primary-300" />
+              <Bot
+                size={21}
+                className="text-primary-500 dark:text-primary-300"
+              />
             </div>
             <div>
-              <p className="text-sm font-semibold leading-tight text-ink">DevOps</p>
-              <p className="text-xs leading-tight text-primary-700 dark:text-primary-300">Assistant</p>
+              <p className="text-sm font-semibold leading-tight text-ink">
+                DevOps
+              </p>
+              <p className="text-xs leading-tight text-primary-700 dark:text-primary-300">
+                Assistant
+              </p>
             </div>
           </div>
           <div className="mt-4 rounded-2xl border border-surface-600 bg-surface-900/70 p-3">
@@ -49,7 +120,9 @@ export default function Layout() {
               <RoleBadge role={user?.role} />
               <Shield size={15} className={role.accentClass} />
             </div>
-            <p className="mt-2 text-xs leading-5 text-ink-subtle">{role.headline}</p>
+            <p className="mt-2 text-xs leading-5 text-ink-subtle">
+              {role.headline}
+            </p>
           </div>
         </div>
 
@@ -60,10 +133,10 @@ export default function Layout() {
               to={to}
               className={({ isActive }) =>
                 clsx(
-                  'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
+                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
                   isActive
-                    ? 'border border-primary-500/30 bg-primary-500/10 text-primary-700 shadow-sm dark:text-primary-200'
-                    : 'text-ink-muted hover:bg-surface-700/80 hover:text-ink',
+                    ? "border border-primary-500/30 bg-primary-500/10 text-primary-700 shadow-sm dark:text-primary-200"
+                    : "text-ink-muted hover:bg-surface-700/80 hover:text-ink",
                 )
               }
             >
@@ -79,7 +152,10 @@ export default function Layout() {
           </div>
           <div className="mb-2 flex items-center gap-2 rounded-xl bg-surface-900/70 px-3 py-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-full border border-surface-500 bg-surface-700">
-              <Shield size={14} className="text-primary-500 dark:text-primary-300" />
+              <Shield
+                size={14}
+                className="text-primary-500 dark:text-primary-300"
+              />
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm text-ink">{user?.username}</p>
@@ -104,12 +180,17 @@ export default function Layout() {
             </div>
             <div>
               <p className="text-sm font-semibold text-ink">DevOps Assistant</p>
-              <div className="mt-1"><RoleBadge role={user?.role} /></div>
+              <div className="mt-1">
+                <RoleBadge role={user?.role} />
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle compact />
-            <button onClick={handleLogout} className="rounded-xl border border-surface-600 bg-surface-800 p-2 text-ink-muted hover:bg-surface-700 hover:text-red-500">
+            <button
+              onClick={handleLogout}
+              className="rounded-xl border border-surface-600 bg-surface-800 p-2 text-ink-muted hover:bg-surface-700 hover:text-red-500"
+            >
               <LogOut size={17} />
             </button>
           </div>
@@ -122,8 +203,10 @@ export default function Layout() {
               to={to}
               className={({ isActive }) =>
                 clsx(
-                  'flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition',
-                  isActive ? 'border-primary-500/30 bg-primary-500/10 text-primary-700 dark:text-primary-200' : 'border-surface-600 text-ink-muted',
+                  "flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition",
+                  isActive
+                    ? "border-primary-500/30 bg-primary-500/10 text-primary-700 dark:text-primary-200"
+                    : "border-surface-600 text-ink-muted",
                 )
               }
             >
@@ -137,5 +220,5 @@ export default function Layout() {
         </main>
       </div>
     </div>
-  )
+  );
 }

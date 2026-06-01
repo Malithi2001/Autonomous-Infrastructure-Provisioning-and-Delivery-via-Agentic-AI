@@ -46,7 +46,7 @@ def _build_test_app() -> FastAPI:
     return _app
 
 
-test_app = _build_test_app()
+_test_app = _build_test_app()
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -71,14 +71,14 @@ async def db_session():
 async def override_db(db_session: AsyncSession):
     async def _override():
         yield db_session
-    test_app.dependency_overrides[get_db] = _override
+    _test_app.dependency_overrides[get_db] = _override
     yield
-    test_app.dependency_overrides.pop(get_db, None)
+    _test_app.dependency_overrides.pop(get_db, None)
 
 
 @pytest.fixture()
 def client():
-    with TestClient(test_app, raise_server_exceptions=False) as c:
+    with TestClient(_test_app, raise_server_exceptions=False) as c:
         yield c
 
 
@@ -457,13 +457,13 @@ class TestWebSocketConnectionLimit:
 class TestWebSocketStreaming:
 
     def test_ws_rejects_missing_token(self):
-        with TestClient(test_app) as c:
+        with TestClient(_test_app) as c:
             with pytest.raises(Exception):
                 with c.websocket_connect("/ws/ws/agent") as ws:
                     ws.receive_text()
 
     def test_ws_rejects_bad_token(self):
-        with TestClient(test_app) as c:
+        with TestClient(_test_app) as c:
             with pytest.raises(Exception):
                 with c.websocket_connect("/ws/ws/agent?token=garbage") as ws:
                     ws.receive_text()
@@ -481,7 +481,7 @@ class TestWebSocketStreaming:
         mock_agent.stream_chat = _fake_stream
 
         with patch("app.api.routes.agent.get_or_create_agent", return_value=mock_agent):
-            with TestClient(test_app) as c:
+            with TestClient(_test_app) as c:
                 with c.websocket_connect(f"/ws/ws/agent?token={token}") as ws:
                     ws.send_json({"message": "hello", "session_id": sid})
 

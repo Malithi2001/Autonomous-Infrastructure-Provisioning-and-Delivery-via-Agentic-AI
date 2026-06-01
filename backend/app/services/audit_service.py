@@ -16,6 +16,69 @@ class AuditError(RuntimeError):
     """Raised when audit record creation fails."""
 
 
+MAX_AUDIT_TEXT_LENGTH = 1000
+MAX_AUDIT_LOG_PREVIEW_LENGTH = 500
+
+
+def _truncate_text(value: str, limit: int = MAX_AUDIT_TEXT_LENGTH) -> str:
+    """Return a compact string safe for audit records."""
+    if len(value) <= limit:
+        return value
+    return f"{value[:limit]}... [truncated {len(value) - limit} chars]"
+
+
+def _summarize_context(context: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Summarize user-provided agent context without storing large logs or secrets."""
+    summary: dict[str, Any] = {}
+    for key, value in (context or {}).items():
+        key_lower = str(key).lower()
+        if any(pattern in key_lower for pattern in ["token", "secret", "key", "password", "credential", "api_key"]):
+            summary[str(key)] = "[REDACTED]"
+        elif key_lower in {"log_text", "logs", "raw_log"}:
+            text = str(value or "")
+            summary[str(key)] = {
+                "length": len(text),
+                "preview": _truncate_text(text, MAX_AUDIT_LOG_PREVIEW_LENGTH),
+            }
+        elif isinstance(value, list):
+            summary[str(key)] = {
+                "count": len(value),
+                "preview": [_truncate_text(str(item), 200) for item in value[:10]],
+            }
+        elif isinstance(value, dict):
+            summary[str(key)] = {
+                nested_key: "[REDACTED]" if any(
+                    pattern in str(nested_key).lower()
+                    for pattern in ["token", "secret", "key", "password", "credential", "api_key"]
+                ) else _truncate_text(str(nested_value), 200)
+                for nested_key, nested_value in list(value.items())[:20]
+            }
+        else:
+            summary[str(key)] = _truncate_text(str(value), 300)
+    return summary
+
+
+def _summarize_agent_metadata(metadata: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Keep important agent metadata while avoiding oversized generated content."""
+    safe: dict[str, Any] = {}
+    for key, value in (metadata or {}).items():
+        key_lower = str(key).lower()
+        if any(pattern in key_lower for pattern in ["token", "secret", "key", "password", "credential", "api_key"]):
+            safe[str(key)] = "[REDACTED]"
+        elif key_lower in {"workflow_yaml", "log_text", "logs", "raw_log"}:
+            text = str(value or "")
+            safe[str(key)] = {"length": len(text), "preview": _truncate_text(text, 500)}
+        elif key_lower == "files" and isinstance(value, list):
+            safe[str(key)] = {"count": len(value), "preview": value[:20]}
+        elif isinstance(value, dict):
+            safe[str(key)] = _redact_sensitive_values(value)
+        elif isinstance(value, list):
+            safe[str(key)] = [_truncate_text(str(item), 200) for item in value[:20]]
+        else:
+            safe[str(key)] = _truncate_text(str(value), 500)
+    return safe
+
+
 def _redact_sensitive_values(data: Any, depth: int = 0) -> Any:
     """Recursively redact tokens, keys, and secrets from audit data."""
     if depth > 10:  # Prevent runaway recursion
@@ -374,4 +437,60 @@ async def log_approval_decision(
         },
         session_id=session_id,
         source="api",
+    )
+
+
+async def log_multi_agent_execution(
+    db: AsyncSession,
+    *,
+    message: str,
+    context: Mapping[str, Any] | None,
+    selected_agent: str,
+    intent: str,
+    risk_level: str,
+    success: bool,
+    result: str,
+    metadata: Mapping[str, Any] | None = None,
+    actor: str = "system",
+    user_id: str | None = None,
+    session_id: str | None = None,
+    source: str = "api",
+) -> Execution:
+    """Log a deterministic multi-agent orchestration run."""
+    summarized_metadata = _summarize_agent_metadata(metadata)
+    tool_or_service = (
+        summarized_metadata.get("tool_called")
+        or summarized_metadata.get("service_called")
+        or summarized_metadata.get("proposed_tool_call")
+        or selected_agent
+    )
+    approval_required = bool(summarized_metadata.get("approval_required"))
+    status = "pending" if approval_required else "completed" if success else "failed"
+    result_summary = _truncate_text(result or "", MAX_AUDIT_TEXT_LENGTH)
+    error = result_summary if not success and not approval_required else None
+
+    return await log_execution(
+        db,
+        tool_name="multi_agent_orchestration",
+        action_summary=f"Routed request to {selected_agent} for {intent}",
+        status=status,
+        actor=actor,
+        tool_input={
+            "request_received": True,
+            "message": _truncate_text(message or "", 500),
+            "context": _summarize_context(context),
+            "user_id": user_id,
+        },
+        tool_output={
+            "selected_agent": selected_agent,
+            "intent": intent,
+            "risk_level": risk_level,
+            "tool_or_service_called": tool_or_service,
+            "success": success,
+            "result_summary": result_summary,
+            "metadata": summarized_metadata,
+        },
+        error=error,
+        session_id=session_id,
+        source=source,
     )

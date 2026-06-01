@@ -5,7 +5,7 @@ import ssl
 from typing import Any, AsyncGenerator
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
@@ -82,9 +82,35 @@ async def init_db() -> None:
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            await ensure_schema_compatibility(conn)
         await ensure_default_admin()
     except Exception as exc:
         logger.warning("database.init.skipped", error=str(exc))
+
+
+async def ensure_schema_compatibility(conn) -> None:
+    """
+    Apply small additive schema fixes for demo databases created before newer
+    ORM fields existed. Base.metadata.create_all() does not alter existing
+    tables, so nullable columns added during MVP development need this shim.
+    """
+    dialect = conn.dialect.name
+    if dialect == "postgresql":
+        await conn.execute(
+            text(
+                "ALTER TABLE workflow_failures "
+                "ADD COLUMN IF NOT EXISTS recommendation_json TEXT"
+            )
+        )
+        return
+
+    if dialect == "sqlite":
+        result = await conn.execute(text("PRAGMA table_info(workflow_failures)"))
+        columns = {row[1] for row in result.fetchall()}
+        if "recommendation_json" not in columns:
+            await conn.execute(
+                text("ALTER TABLE workflow_failures ADD COLUMN recommendation_json TEXT")
+            )
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

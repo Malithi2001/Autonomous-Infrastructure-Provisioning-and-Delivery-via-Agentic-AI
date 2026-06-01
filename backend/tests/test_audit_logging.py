@@ -1,4 +1,6 @@
 """Test audit logging for model prediction endpoint."""
+import json
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 import pytest_asyncio
@@ -111,3 +113,50 @@ async def test_audit_service_redacts_tokens(db_session: AsyncSession):
     assert "sk-" not in execution.details
     details = execution.details
     assert "ghp_" not in details or "[REDACTED]" in details
+
+
+@pytest.mark.asyncio
+async def test_audit_service_logs_multi_agent_execution_safely(db_session: AsyncSession):
+    """Verify multi-agent audit records summarize large inputs and redact secrets."""
+    long_log = "npm ERR! Missing script: test\n" * 80
+    long_yaml = "name: CI\n" * 200
+
+    execution = await audit_service.log_multi_agent_execution(
+        db_session,
+        message="diagnose failure",
+        context={
+            "log_text": long_log,
+            "github_token": "ghp_1234567890abcdefghijklmnopqrstuvwxyz",
+        },
+        selected_agent="diagnosis_agent",
+        intent="cicd_failure_diagnosis",
+        risk_level="low",
+        success=True,
+        result="Predicted CI/CD failure: npm_missing_test_script.",
+        metadata={
+            "label": "npm_missing_test_script",
+            "tool_called": "predict_failure",
+            "workflow_yaml": long_yaml,
+            "api_key": "sk-1234567890abcdef",
+        },
+        actor="test_user",
+        user_id="user-123",
+        session_id="session-123",
+    )
+
+    assert execution.tool_name == "multi_agent_orchestration"
+    assert execution.status == "completed"
+    assert execution.requested_by == "test_user"
+    assert execution.session_id == "session-123"
+
+    details = json.loads(execution.details)
+    assert details["input"]["context"]["log_text"]["length"] == len(long_log)
+    assert len(details["input"]["context"]["log_text"]["preview"]) < len(long_log)
+    assert details["input"]["context"]["github_token"] == "[REDACTED]"
+    assert details["output"]["selected_agent"] == "diagnosis_agent"
+    assert details["output"]["intent"] == "cicd_failure_diagnosis"
+    assert details["output"]["tool_or_service_called"] == "predict_failure"
+    assert details["output"]["metadata"]["workflow_yaml"]["length"] == len(long_yaml)
+    assert details["output"]["metadata"]["api_key"] == "[REDACTED]"
+    assert "ghp_" not in execution.details
+    assert "sk-" not in execution.details

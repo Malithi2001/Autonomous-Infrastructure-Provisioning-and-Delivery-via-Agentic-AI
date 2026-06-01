@@ -408,6 +408,31 @@ class TestDecideApproval:
         assert record.status == "rejected"
         assert failure.status == "rejected"
 
+    def test_dispatch_github_create_workflow_pr(self, monkeypatch):
+        from app.api.routes import approvals as approvals_router
+
+        def _create_workflow_pr(repo_full_name: str) -> dict:
+            assert repo_full_name == "octo-org/demo-app"
+            return {
+                "repo_full_name": repo_full_name,
+                "branch": "ai-cicd/setup-pipeline",
+                "workflow_path": ".github/workflows/ai-generated-ci.yml",
+                "pull_request_url": "https://github.com/octo-org/demo-app/pull/7",
+            }
+
+        monkeypatch.setattr("app.tools.github_tool.create_workflow_pr", _create_workflow_pr)
+
+        details, status = approvals_router._dispatch_tool(
+            "github_create_workflow_pr",
+            {
+                "repo_full_name": "octo-org/demo-app",
+                "approval_details": {"selected_agent": "github_agent"},
+            },
+        )
+
+        assert status == "completed"
+        assert "https://github.com/octo-org/demo-app/pull/7" in details
+
     @pytest.mark.asyncio
     async def test_decide_twice_returns_409(
         self, client: AsyncClient, db_session: AsyncSession
