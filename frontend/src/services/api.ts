@@ -247,6 +247,19 @@ export interface DetectedStack {
   has_docker: boolean;
   has_existing_workflows: boolean;
   recommended_workflow: string;
+  project_dir: string;
+  detected_projects: Array<{
+    type: string;
+    path: string;
+    framework: string;
+    package_manager: string;
+  }>;
+  ci_warnings: Array<{
+    severity: string;
+    path: string;
+    issue: string;
+    recommendation: string;
+  }>;
 }
 
 export interface GeneratedWorkflow {
@@ -259,6 +272,20 @@ export interface RepositoryScanResult {
   repo_full_name: string;
   files: string[];
   stack: DetectedStack;
+  readiness: {
+    score: number;
+    grade: string;
+    summary: string;
+    strengths: string[];
+    findings: Array<{
+      severity: string;
+      category: string;
+      title: string;
+      detail: string;
+      recommendation: string;
+    }>;
+    recommended_next_actions: string[];
+  };
 }
 
 export interface WorkflowPRResult {
@@ -276,10 +303,16 @@ export const repositoryService = {
     });
     return res.data;
   },
-  createWorkflowPr: async (repoFullName: string): Promise<WorkflowPRResult> => {
+  createWorkflowPr: async (
+    repoFullName: string,
+    overwriteExistingWorkflow = false,
+  ): Promise<WorkflowPRResult> => {
     const res = await api.post<WorkflowPRResult>(
       "/repositories/create-workflow-pr",
-      { repo_full_name: repoFullName },
+      {
+        repo_full_name: repoFullName,
+        overwrite_existing_workflow: overwriteExistingWorkflow,
+      },
     );
     return res.data;
   },

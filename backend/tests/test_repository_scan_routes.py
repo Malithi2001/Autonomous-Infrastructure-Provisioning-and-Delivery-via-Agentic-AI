@@ -79,10 +79,10 @@ def test_scan_repository_requires_auth():
 
 
 def test_scan_repository_returns_files_and_detected_stack(monkeypatch):
-    def _fake_get_repository_tree(repo_full_name: str, branch: str | None = None) -> list[str]:
+    def _fake_get_repository_analysis_inputs(repo_full_name: str, branch: str | None = None) -> dict[str, list[str]]:
         assert repo_full_name == "octo-org/demo-app"
         assert branch == "main"
-        return [
+        files = [
             "package.json",
             "package-lock.json",
             "src/App.jsx",
@@ -90,8 +90,9 @@ def test_scan_repository_returns_files_and_detected_stack(monkeypatch):
             "Dockerfile",
             ".github/workflows/ci.yml",
         ]
+        return {"files": files, "analysis_inputs": files}
 
-    monkeypatch.setattr(repositories, "get_repository_tree", _fake_get_repository_tree)
+    monkeypatch.setattr(repositories, "get_repository_analysis_inputs", _fake_get_repository_analysis_inputs)
 
     with TestClient(app) as client:
         response = client.post(
@@ -118,14 +119,23 @@ def test_scan_repository_returns_files_and_detected_stack(monkeypatch):
         "has_docker": True,
         "has_existing_workflows": True,
         "recommended_workflow": "node-ci",
+        "project_dir": ".",
+        "detected_projects": [
+            {"type": "docker", "path": ".", "framework": "docker", "package_manager": "unknown"},
+            {"type": "node", "path": ".", "framework": "react", "package_manager": "npm"},
+        ],
+        "ci_warnings": [],
     }
+    assert body["readiness"]["score"] >= 70
+    assert body["readiness"]["grade"] in {"A", "B", "C"}
+    assert body["readiness"]["recommended_next_actions"]
 
 
 def test_scan_repository_returns_clear_github_error(monkeypatch):
-    def _fake_get_repository_tree(repo_full_name: str, branch: str | None = None) -> list[str]:
+    def _fake_get_repository_analysis_inputs(repo_full_name: str, branch: str | None = None) -> dict[str, list[str]]:
         raise GitHubToolError("Unable to read repository tree: repository or resource not found.")
 
-    monkeypatch.setattr(repositories, "get_repository_tree", _fake_get_repository_tree)
+    monkeypatch.setattr(repositories, "get_repository_analysis_inputs", _fake_get_repository_analysis_inputs)
 
     with TestClient(app) as client:
         response = client.post(
@@ -136,6 +146,40 @@ def test_scan_repository_returns_clear_github_error(monkeypatch):
 
     assert response.status_code == 400
     assert response.json() == {"detail": "Unable to read repository tree: repository or resource not found."}
+
+
+def test_scan_repository_reports_existing_workflow_compatibility_warnings(monkeypatch):
+    def _fake_get_repository_analysis_inputs(repo_full_name: str, branch: str | None = None) -> dict[str, list[str]]:
+        files = ["package.json", ".github/workflows/security.yml"]
+        return {
+            "files": files,
+            "analysis_inputs": [
+                *files,
+                ".github/workflows/security.yml\n"
+                "on: [pull_request]\n"
+                "jobs:\n"
+                "  dependency-review:\n"
+                "    steps:\n"
+                "      - uses: actions/dependency-review-action@v5\n",
+            ],
+        }
+
+    monkeypatch.setattr(repositories, "get_repository_analysis_inputs", _fake_get_repository_analysis_inputs)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/repositories/scan",
+            headers=_auth_headers(),
+            json={"repo_full_name": "octo-org/demo-app"},
+        )
+
+    assert response.status_code == 200
+    warnings = response.json()["stack"]["ci_warnings"]
+    assert warnings
+    assert warnings[0]["path"] == ".github/workflows/security.yml"
+    assert "dependency-review-action" in warnings[0]["issue"]
+    assert response.json()["readiness"]["score"] < 90
+    assert response.json()["readiness"]["findings"]
 
 
 @pytest.mark.asyncio
@@ -207,16 +251,17 @@ async def test_scan_repository_uses_installation_token_when_installed(monkeypatc
     await db_session.flush()
     monkeypatch.setattr(repositories, "get_installation_access_token", lambda installation_id: "installation-token")
 
-    def _fake_get_repository_tree(
+    def _fake_get_repository_analysis_inputs(
         repo_full_name: str,
         branch: str | None = None,
         *,
         token: str | None = None,
-    ) -> list[str]:
+    ) -> dict[str, list[str]]:
         assert token == "installation-token"
-        return ["package.json", "src/App.jsx"]
+        files = ["package.json", "src/App.jsx"]
+        return {"files": files, "analysis_inputs": files}
 
-    monkeypatch.setattr(repositories, "get_repository_tree", _fake_get_repository_tree)
+    monkeypatch.setattr(repositories, "get_repository_analysis_inputs", _fake_get_repository_analysis_inputs)
 
     with TestClient(app) as client:
         response = client.post(
@@ -230,7 +275,11 @@ async def test_scan_repository_uses_installation_token_when_installed(monkeypatc
 
 
 def test_create_workflow_pr_requires_write_permission(monkeypatch):
-    def _unexpected_create_workflow_pr(repo_full_name: str) -> dict:
+    def _unexpected_create_workflow_pr(
+        repo_full_name: str,
+        *,
+        overwrite_existing_workflow: bool = False,
+    ) -> dict:
         raise AssertionError("create_workflow_pr should not be called")
 
     monkeypatch.setattr(repositories, "create_workflow_pr", _unexpected_create_workflow_pr)
@@ -247,8 +296,13 @@ def test_create_workflow_pr_requires_write_permission(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_create_workflow_pr_returns_pr_details_and_audits(monkeypatch, db_session: AsyncSession):
-    def _fake_create_workflow_pr(repo_full_name: str) -> dict:
+    def _fake_create_workflow_pr(
+        repo_full_name: str,
+        *,
+        overwrite_existing_workflow: bool = False,
+    ) -> dict:
         assert repo_full_name == "octo-org/demo-app"
+        assert overwrite_existing_workflow is True
         return {
             "repo_full_name": "octo-org/demo-app",
             "detected_stack": {
@@ -258,6 +312,9 @@ async def test_create_workflow_pr_returns_pr_details_and_audits(monkeypatch, db_
                 "has_docker": False,
                 "has_existing_workflows": False,
                 "recommended_workflow": "node-ci",
+                "project_dir": ".",
+                "detected_projects": [],
+                "ci_warnings": [],
             },
             "branch": "ai-cicd/setup-pipeline",
             "workflow_path": ".github/workflows/ai-generated-ci.yml",
@@ -271,7 +328,10 @@ async def test_create_workflow_pr_returns_pr_details_and_audits(monkeypatch, db_
         response = client.post(
             "/api/v1/repositories/create-workflow-pr",
             headers=_auth_headers("operator"),
-            json={"repo_full_name": "octo-org/demo-app"},
+            json={
+                "repo_full_name": "octo-org/demo-app",
+                "overwrite_existing_workflow": True,
+            },
         )
 
     assert response.status_code == 200
@@ -284,6 +344,9 @@ async def test_create_workflow_pr_returns_pr_details_and_audits(monkeypatch, db_
             "has_docker": False,
             "has_existing_workflows": False,
             "recommended_workflow": "node-ci",
+            "project_dir": ".",
+            "detected_projects": [],
+            "ci_warnings": [],
         },
         "branch": "ai-cicd/setup-pipeline",
         "workflow_path": ".github/workflows/ai-generated-ci.yml",
@@ -295,6 +358,7 @@ async def test_create_workflow_pr_returns_pr_details_and_audits(monkeypatch, db_
     assert execution.status == "completed"
     assert execution.requested_by == "repo-scan-test-user"
     assert "https://github.com/octo-org/demo-app/pull/7" in (execution.summary or "")
+    assert '"overwrite_existing_workflow": true' in (execution.tool_input or "")
 
 
 @pytest.mark.asyncio
@@ -312,8 +376,14 @@ async def test_create_workflow_pr_uses_installation_token_when_installed(monkeyp
     await db_session.flush()
     monkeypatch.setattr(repositories, "get_installation_access_token", lambda installation_id: "installation-token")
 
-    def _fake_create_workflow_pr(repo_full_name: str, *, token: str | None = None) -> dict:
+    def _fake_create_workflow_pr(
+        repo_full_name: str,
+        *,
+        overwrite_existing_workflow: bool = False,
+        token: str | None = None,
+    ) -> dict:
         assert repo_full_name == "octo-org/demo-app"
+        assert overwrite_existing_workflow is False
         assert token == "installation-token"
         return {
             "repo_full_name": "octo-org/demo-app",
@@ -345,7 +415,11 @@ async def test_create_workflow_pr_uses_installation_token_when_installed(monkeyp
 
 @pytest.mark.asyncio
 async def test_create_workflow_pr_returns_clear_github_error_and_audits(monkeypatch, db_session: AsyncSession):
-    def _fake_create_workflow_pr(repo_full_name: str) -> dict:
+    def _fake_create_workflow_pr(
+        repo_full_name: str,
+        *,
+        overwrite_existing_workflow: bool = False,
+    ) -> dict:
         raise GitHubToolError("Branch 'ai-cicd/setup-pipeline' already exists.")
 
     monkeypatch.setattr(repositories, "create_workflow_pr", _fake_create_workflow_pr)

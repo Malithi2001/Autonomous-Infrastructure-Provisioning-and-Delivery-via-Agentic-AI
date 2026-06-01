@@ -31,7 +31,13 @@ class CICDAgent:
 
         try:
             stack = detect_stack(files)
-            metadata: dict[str, Any] = {"stack": stack}
+            ci_warnings = stack.get("ci_warnings") or []
+            detected_projects = stack.get("detected_projects") or []
+            metadata: dict[str, Any] = {
+                "stack": stack,
+                "detected_project_count": len(detected_projects),
+                "ci_warning_count": len(ci_warnings),
+            }
 
             if should_generate:
                 workflow_yaml = generate_workflow(stack)
@@ -42,6 +48,8 @@ class CICDAgent:
                     f"for {stack['language']} / {stack['framework']} project "
                     f"using {stack['recommended_workflow']}."
                 )
+                if detected_projects:
+                    summary += f" Covered {len(detected_projects)} detected project(s)."
             else:
                 summary = (
                     "Detected project stack: "
@@ -49,6 +57,11 @@ class CICDAgent:
                     f"with {stack['package_manager']} package management. "
                     f"Recommended workflow: {stack['recommended_workflow']}."
                 )
+                if detected_projects:
+                    summary += f" Detected {len(detected_projects)} project(s)."
+
+            if ci_warnings:
+                summary += f" Found {len(ci_warnings)} existing CI compatibility warning(s)."
 
             return AgentResult(
                 selected_agent=self.name,
@@ -79,8 +92,14 @@ class CICDAgent:
     def _is_workflow_generation_request(message: str) -> bool:
         normalized = message.lower()
         generation_phrases = (
+            "generate workflow",
             "generate ci workflow",
             "generate github actions workflow",
             "create ci pipeline",
+            "create ci/cd pipeline",
+            "setup ci",
+            "setup ci/cd",
+            "make ci cd",
+            "make cicd",
         )
         return any(phrase in normalized for phrase in generation_phrases)

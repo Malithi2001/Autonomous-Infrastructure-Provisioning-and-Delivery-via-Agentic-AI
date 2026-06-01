@@ -411,8 +411,13 @@ class TestDecideApproval:
     def test_dispatch_github_create_workflow_pr(self, monkeypatch):
         from app.api.routes import approvals as approvals_router
 
-        def _create_workflow_pr(repo_full_name: str) -> dict:
+        def _create_workflow_pr(
+            repo_full_name: str,
+            *,
+            overwrite_existing_workflow: bool = False,
+        ) -> dict:
             assert repo_full_name == "octo-org/demo-app"
+            assert overwrite_existing_workflow is True
             return {
                 "repo_full_name": repo_full_name,
                 "branch": "ai-cicd/setup-pipeline",
@@ -426,6 +431,7 @@ class TestDecideApproval:
             "github_create_workflow_pr",
             {
                 "repo_full_name": "octo-org/demo-app",
+                "overwrite_existing_workflow": True,
                 "approval_details": {"selected_agent": "github_agent"},
             },
         )
