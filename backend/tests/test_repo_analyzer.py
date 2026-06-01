@@ -203,3 +203,26 @@ def test_detect_stack_warns_about_dependency_review_action():
     assert result["ci_warnings"][0]["path"] == ".github/workflows/security.yml"
     assert "dependency-review-action" in result["ci_warnings"][0]["issue"]
     assert "dependency graph" in result["ci_warnings"][0]["recommendation"]
+
+
+def test_detect_stack_warns_about_aws_credentials_missing_region():
+    result = detect_stack(
+        [
+            "package.json",
+            ".github/workflows/deploy.yml\n"
+            "name: Deploy\n"
+            "on: [push]\n"
+            "jobs:\n"
+            "  deploy:\n"
+            "    steps:\n"
+            "      - uses: aws-actions/configure-aws-credentials@v4\n"
+            "        with:\n"
+            "          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}\n",
+        ]
+    )
+
+    assert result["ci_warnings"]
+    assert result["ci_warnings"][0]["severity"] == "error"
+    assert result["ci_warnings"][0]["path"] == ".github/workflows/deploy.yml"
+    assert "aws-region" in result["ci_warnings"][0]["issue"]
+    assert "AWS_REGION" in result["ci_warnings"][0]["recommendation"]
