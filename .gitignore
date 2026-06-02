@@ -53,10 +53,16 @@ frontend/node_modules/.cache/
 
 # ── Environment Files ─────────────────────────────────────────────────────────
 .env
+.env.*
+!.env.example
 .env.local
 .env.*.local
 backend/.env
+backend/.env.*
+!backend/.env.example
 frontend/.env
+frontend/.env.*
+!frontend/.env.example
 
 # ── Docker ────────────────────────────────────────────────────────────────────
 # (docker-compose.override.yml is gitignored — use for local overrides)
@@ -85,7 +91,10 @@ backend/app/ml/reports/*
 
 # ── Database ──────────────────────────────────────────────────────────────────
 *.sqlite3
+*.sqlite
+*.sqlite-journal
 *.db
+*.db-journal
 postgres_data/
 
 # ── Secrets / Keys ────────────────────────────────────────────────────────────

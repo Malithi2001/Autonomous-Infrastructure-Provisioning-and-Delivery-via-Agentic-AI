@@ -14,7 +14,7 @@ from app.agents.agent_types import AgentResult, AgentTask
 from app.agents.devops_agent import _agent_pool, get_or_create_agent
 from app.agents.orchestration_agent import OrchestrationAgent
 from app.agents.tools_registry import HITLApprovalRequired
-from app.api.routes.approvals import create_approval_request
+from app.api.routes.approvals import create_approval_request, redact_tool_input
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, get_db
 from app.core.security import ACCESS_TOKEN_COOKIE_NAME, decode_token, has_permission, require_permission
@@ -241,7 +241,7 @@ async def chat(
                         "approval_id": approval.id,
                         "tool_name": approval_exc.tool_name,
                         "risk_level": approval_exc.risk_level,
-                        "tool_input": approval_exc.tool_input,
+                        "tool_input": redact_tool_input(approval_exc.tool_input),
                     },
                     ensure_ascii=False,
                 )

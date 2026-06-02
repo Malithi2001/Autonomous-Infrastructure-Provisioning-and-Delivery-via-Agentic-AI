@@ -19,7 +19,7 @@
     "rows": 330
   },
   "dataset_size": 330,
-  "generated_at": "2026-06-02T05:29:11.732992+00:00",
+  "generated_at": "2026-06-02T08:58:14.399155+00:00",
   "labels": [
     "docker_build_failed",
     "maven_test_failed",

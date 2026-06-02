@@ -1,21 +1,23 @@
-import { useMemo, useState } from "react";
+import { getDebugHint, getUserFriendlyError } from "@/lib/errorMessages";
 import {
-  Bot,
-  Braces,
-  CheckCircle2,
-  Circle,
-  Loader2,
-  Network,
-  Play,
-  Route,
-  ShieldAlert,
-  Sparkles,
-} from "lucide-react";
-import {
-  agentService,
-  type AgentOrchestrationResult,
-  type AgentTraceStep,
+    agentService,
+    type AgentOrchestrationResult,
+    type AgentTraceStep,
 } from "@/services/api";
+import {
+    AlertCircle,
+    Bot,
+    Braces,
+    CheckCircle2,
+    Circle,
+    Loader2,
+    Network,
+    Play,
+    Route,
+    ShieldAlert,
+    Sparkles,
+} from "lucide-react";
+import { useMemo, useState } from "react";
 
 const demoContexts = {
   containers: "{}",
@@ -76,13 +78,7 @@ function formatJson(value: unknown) {
 }
 
 function errorMessage(err: unknown) {
-  if (typeof err === "object" && err !== null && "response" in err) {
-    const response = (err as { response?: { data?: { detail?: string } } })
-      .response;
-    if (response?.data?.detail) return response.data.detail;
-  }
-  if (err instanceof Error) return err.message;
-  return "Unable to run the agent request.";
+  return getUserFriendlyError(err);
 }
 
 function riskBadgeClass(risk: string) {
@@ -383,9 +379,19 @@ export default function MultiAgentPage() {
                   {parsedContextPreview ? "Valid JSON" : "Invalid JSON"}
                 </span>
                 {error && (
-                  <span className="text-sm text-red-600 dark:text-red-300">
-                    {error}
-                  </span>
+                  <div className="w-full">
+                    <div className="inline-flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-200">
+                      <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                      <div>
+                        <p className="font-semibold">{error}</p>
+                        {getDebugHint(error) && (
+                          <p className="mt-1 text-xs opacity-80">
+                            Tip: {getDebugHint(error)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>

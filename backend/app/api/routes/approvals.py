@@ -13,6 +13,7 @@ Flow
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -32,6 +33,36 @@ from app.services.fix_pr_service import FixPRServiceError, create_fix_pr_for_fai
 from app.services.github_app_service import GitHubAppError, get_installation_access_token, get_installation_for_repo
 
 router = APIRouter()
+
+_SENSITIVE_TEXT_PATTERNS = [
+    re.compile(r"(gh[pousr]_|github_pat_)[A-Za-z0-9_]+", re.IGNORECASE),
+    re.compile(r"(Bearer\s+)[^\s\"']+", re.IGNORECASE),
+    re.compile(
+        r"(?i)((token|secret|api[_-]?key|private[_-]?key|password|credential|access[_-]?key)"
+        r"\s*[:=]\s*)[^\s\"']+"
+    ),
+]
+
+
+def redact_tool_input(value):
+    """Return approval tool input safe enough for persistence and audit display."""
+    if isinstance(value, dict):
+        redacted = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if any(part in key_text.lower() for part in ("token", "secret", "key", "password", "credential")):
+                redacted[key] = "[REDACTED]"
+            else:
+                redacted[key] = redact_tool_input(item)
+        return redacted
+    if isinstance(value, list):
+        return [redact_tool_input(item) for item in value]
+    if isinstance(value, str):
+        redacted = value
+        for pattern in _SENSITIVE_TEXT_PATTERNS:
+            redacted = pattern.sub(lambda match: f"{match.group(1)}[REDACTED]", redacted)
+        return redacted
+    return value
 
 
 # Helper used by the agent
@@ -55,12 +86,13 @@ async def create_approval_request(
     """
     from datetime import timedelta
     expires = datetime.now(tz=timezone.utc) + timedelta(seconds=timeout_seconds)
+    safe_tool_input = redact_tool_input(tool_input)
     record = ApprovalRequest(
         id=str(uuid.uuid4()),
         session_id=session_id,
         requested_by=requested_by,
         tool_name=tool_name,
-        tool_input=json.dumps(tool_input),
+        tool_input=json.dumps(safe_tool_input),
         action=action,
         risk_level=risk_level,
         summary=summary,

@@ -1,17 +1,19 @@
-import { useState } from "react";
+import { getDebugHint, getUserFriendlyError } from "@/lib/errorMessages";
 import {
-  ExternalLink,
-  GitPullRequest,
-  GitBranch,
-  Loader2,
-  Radar,
-  ShieldCheck,
-} from "lucide-react";
-import {
-  repositoryService,
-  type RepositoryScanResult,
-  type WorkflowPRResult,
+    repositoryService,
+    type RepositoryScanResult,
+    type WorkflowPRResult,
 } from "@/services/api";
+import {
+    AlertCircle,
+    ExternalLink,
+    GitBranch,
+    GitPullRequest,
+    Loader2,
+    Radar,
+    ShieldCheck,
+} from "lucide-react";
+import { useState } from "react";
 
 function stackSummary(stack: RepositoryScanResult["stack"]) {
   return [
@@ -189,11 +191,7 @@ export default function RepositorySetupPage() {
       setScanResult(result);
     } catch (err: any) {
       setScanResult(null);
-      setError(
-        err.response?.data?.detail ||
-          err.message ||
-          "Unable to scan this repository.",
-      );
+      setError(getUserFriendlyError(err));
     } finally {
       setScanning(false);
     }
@@ -228,11 +226,7 @@ export default function RepositorySetupPage() {
         );
       }
     } catch (err: any) {
-      setError(
-        err.response?.data?.detail ||
-          err.message ||
-          "Unable to create a workflow pull request.",
-      );
+      setError(getUserFriendlyError(err));
     } finally {
       setCreatingPr(false);
     }
@@ -292,7 +286,17 @@ export default function RepositorySetupPage() {
             </div>
             {error && (
               <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200">
-                {error}
+                <div className="flex items-start gap-2">
+                  <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-semibold">{error}</p>
+                    {getDebugHint(error) && (
+                      <p className="mt-1 text-xs opacity-80">
+                        Tip: {getDebugHint(error)}
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </section>

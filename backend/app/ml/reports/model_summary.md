@@ -60,4 +60,4 @@ features and a balanced Logistic Regression classifier.
 - Some labels may have fewer examples than others, which can reduce recall for minority failure categories.
 - The model predicts a likely failure category; human review is still needed before applying repository changes.
 
-Generated at: 2026-06-02T05:29:11.732992+00:00
+Generated at: 2026-06-02T08:58:14.399155+00:00

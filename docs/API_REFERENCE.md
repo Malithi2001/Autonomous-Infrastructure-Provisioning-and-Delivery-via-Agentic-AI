@@ -1,19 +1,41 @@
-# API Reference
+# API Reference — Smart DevOps Assistant
 
 Base API prefix: `/api/v1`
 
-Interactive OpenAPI docs are available from the FastAPI app at `/docs` when the backend is running.
+**Interactive OpenAPI docs** are available at `/docs` when the backend is running.
+
+---
+
+## Table of Contents
+
+1. [Authentication Model](#1-authentication-model)
+2. [Roles and Permissions](#2-roles-and-permissions)
+3. [Common Error Shape](#3-common-error-shape)
+4. [Health Endpoints](#4-health-endpoints)
+5. [Authentication Endpoints](#5-authentication-endpoints)
+6. [Multi-Agent Orchestration](#6-multi-agent-orchestration)
+7. [CI/CD Analysis & Workflow Generation](#7-cicd-analysis--workflow-generation)
+8. [Repository Management](#8-repository-management)
+9. [Failure Prediction](#9-failure-prediction)
+10. [GitHub Webhooks](#10-github-webhooks)
+11. [Workflow Failures](#11-workflow-failures)
+12. [Approvals (Human-in-the-Loop)](#12-approvals-human-in-the-loop)
+13. [Executions & Audit Logs](#13-executions--audit-logs)
+14. [Evaluation & Metrics](#14-evaluation--metrics)
+15. [Legacy Aliases](#15-legacy-aliases)
+
+---
 
 ## 1. Authentication Model
 
 The backend accepts access tokens from either:
 
-- `Authorization: Bearer <access_token>`
-- the configured httpOnly cookie, default `devops_access_token`
+- **Authorization Header**: `Authorization: Bearer <access_token>`
+- **HTTP-Only Cookie**: default cookie name `devops_access_token`
 
-Most browser calls use the cookie. API clients can use bearer tokens.
+Most browser-based clients use the cookie automatically. API clients (curl, SDKs) use bearer tokens.
 
-Public endpoints:
+**Public endpoints** (no authentication required):
 
 - `GET /health`
 - `GET /`
@@ -21,22 +43,29 @@ Public endpoints:
 - `POST /api/v1/auth/register`
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/refresh`
-- `POST /api/v1/webhooks/github` is public at the HTTP layer but protected by webhook signature verification when configured.
+- `POST /api/v1/webhooks/github` (public HTTP, but requires valid `X-Hub-Signature-256` HMAC)
 
-All other protected routes require a valid access token and the required permission.
+**All other routes** require a valid access token and the specified permission.
 
-## 2. Roles And Permissions
+---
 
-| Role | Main permissions |
-| --- | --- |
-| `viewer` | `agent:chat`, `approvals:read`, `logs:read`, `metrics:read`, `executions:read` |
-| `developer` | `agent:chat`, `logs:read`, `metrics:read`, `executions:read`, `deployments:staging` |
-| `operator` | developer-level read permissions plus `logs:write`, `executions:write`, `approvals:read`, `approvals:decide`, production/infrastructure permissions |
-| `admin` | all permissions |
+## 2. Roles and Permissions
 
-Only viewer and developer accounts can self-sign up. Operator and admin users must be created by an admin.
+| Role | Main Permissions | Use Case |
+| --- | --- | --- |
+| `viewer` | `agent:chat`, `approvals:read`, `logs:read`, `metrics:read`, `executions:read` | Read-only access for observability. |
+| `developer` | All viewer permissions + `metrics:read`, `executions:read` | Developer: view builds and logs. |
+| `operator` | All developer permissions + `logs:write`, `executions:write`, `approvals:read`, `approvals:decide` | Operator: approve high-risk actions, manage CI/CD. |
+| `admin` | All permissions | Full system access. |
+
+- **Public sign-up**: Only `viewer` and `developer` roles.
+- **Operator/Admin creation**: Admin-only, via `POST /api/v1/auth/users`.
+
+---
 
 ## 3. Common Error Shape
+
+All error responses follow this format:
 
 ```json
 {
@@ -44,66 +73,119 @@ Only viewer and developer accounts can self-sign up. Operator and admin users mu
 }
 ```
 
-Common status codes:
+**Common status codes:**
 
 | Code | Meaning |
 | --- | --- |
 | `400` | Bad request or external service validation failure. |
 | `401` | Missing, invalid, or expired token. |
 | `403` | Authenticated user lacks required permission. |
-| `404` | Requested record was not found. |
-| `409` | Approval has already been decided. |
-| `410` | Approval expired. |
+| `404` | Requested record not found. |
+| `409` | Resource conflict (e.g., approval already decided). |
+| `410` | Resource expired (e.g., approval timeout). |
 | `422` | Request validation failed. |
-| `500` | Unexpected backend failure. |
-| `503` | Required model/provider/service unavailable. |
+| `429` | Rate limit exceeded or provider quota exceeded. |
+| `500` | Unexpected backend error. |
+| `503` | Required service unavailable (model, LLM provider, etc.). |
 
-## 4. Health
+---
+
+## 4. Health Endpoints
 
 ### `GET /health`
 
-Checks backend health.
+**Purpose**: Check backend health.
 
-Response:
+**Auth**: None.
+
+**Response** (200 OK):
 
 ```json
 {
-  "status": "ok"
+  "status": "ok",
+  "service": "Smart DevOps Assistant"
 }
 ```
 
+---
+
 ### `GET /`
 
-Root health/info endpoint.
+**Purpose**: Root info endpoint.
 
-## 5. Authentication
+**Auth**: None.
+
+**Response** (200 OK):
+
+```json
+{
+  "name": "Agentic AI-Powered Smart DevOps Assistant",
+  "version": "1.0.0",
+  "docs": "/docs"
+}
+```
+
+---
+
+## 5. Authentication Endpoints
 
 ### `GET /api/v1/auth/roles`
 
-Returns available role profiles and public signup roles.
+**Purpose**: List all available role profiles and public signup roles.
 
-Response:
+**Method**: GET | **Path**: `/api/v1/auth/roles`
+
+**Auth**: None.
+
+**Response** (200 OK):
 
 ```json
 {
   "roles": [
     {
+      "role": "viewer",
+      "label": "Viewer",
+      "description": "Read-only access to logs and workflow failures.",
+      "permissions": ["agent:chat", "approvals:read", "logs:read", "metrics:read", "executions:read"],
+      "can_self_signup": true
+    },
+    {
       "role": "developer",
       "label": "Developer",
-      "description": "Builder workflow...",
-      "permissions": ["agent:chat", "executions:read"],
+      "description": "CI/CD builder with execution permissions.",
+      "permissions": ["agent:chat", "logs:read", "metrics:read", "executions:read"],
       "can_self_signup": true
+    },
+    {
+      "role": "operator",
+      "label": "Operator",
+      "description": "Operator with approval and execution permissions.",
+      "permissions": ["agent:chat", "logs:read", "logs:write", "executions:read", "executions:write", "approvals:read", "approvals:decide"],
+      "can_self_signup": false
+    },
+    {
+      "role": "admin",
+      "label": "Administrator",
+      "description": "Full system access.",
+      "permissions": ["*"],
+      "can_self_signup": false
     }
   ],
-  "public_signup_roles": ["developer", "viewer"]
+  "public_signup_roles": ["viewer", "developer"]
 }
 ```
 
+---
+
 ### `POST /api/v1/auth/register`
 
-Creates a public viewer/developer account and logs it in.
+**Purpose**: Create a public viewer/developer account and log in.
 
-Request:
+**Method**: POST | **Path**: `/api/v1/auth/register`
+
+**Auth**: None.
+
+**Request** (200 OK):
 
 ```json
 {
@@ -114,119 +196,252 @@ Request:
 }
 ```
 
-Response: `LoginResponse`
+**Response** (200 OK):
+
+```json
+{
+  "user": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "email": "dev@example.com",
+    "username": "devuser",
+    "role": "developer",
+    "is_active": true,
+    "created_at": "2026-06-01T10:00:00Z"
+  },
+  "access_token": "eyJhbGc...",
+  "refresh_token": "eyJhbGc...",
+  "token_type": "bearer",
+  "user_id": "550e8400-e29b-41d4-a716-446655440000",
+  "username": "devuser",
+  "role": "developer"
+}
+```
+
+**Error** (400 Bad Request):
+
+- Email already registered
+- Username already taken
+- Role not in public signup roles
+
+---
 
 ### `POST /api/v1/auth/login`
 
-Logs in with email/password or legacy username/password. Sets the httpOnly access cookie and returns tokens.
+**Purpose**: Authenticate and receive access/refresh tokens. Sets httpOnly cookie.
 
-JSON request:
+**Method**: POST | **Path**: `/api/v1/auth/login`
+
+**Auth**: None.
+
+**Request** (email or username):
 
 ```json
 {
-  "email": "admin@example.com",
-  "password": "admin123"
+  "email": "dev@example.com",
+  "password": "password123"
 }
 ```
 
-Legacy username request is also accepted:
+**Legacy Request** (username):
 
 ```json
 {
-  "username": "admin",
-  "password": "admin123"
+  "username": "devuser",
+  "password": "password123"
 }
 ```
 
-Response:
+**Response** (200 OK):
 
 ```json
 {
-  "access_token": "jwt-access-token",
-  "refresh_token": "jwt-refresh-token",
-  "token_type": "bearer",
-  "user_id": "uuid",
-  "username": "admin",
-  "role": "admin",
   "user": {
-    "id": "uuid",
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "email": "dev@example.com",
+    "username": "devuser",
+    "role": "developer",
+    "is_active": true,
+    "created_at": "2026-06-01T10:00:00Z"
+  },
+  "access_token": "eyJhbGc...",
+  "refresh_token": "eyJhbGc...",
+  "token_type": "bearer",
+  "user_id": "550e8400-e29b-41d4-a716-446655440000",
+  "username": "devuser",
+  "role": "developer"
+}
+```
+
+**Notes**:
+- Access token expires in ~15 minutes (configurable).
+- httpOnly cookie `devops_access_token` is set automatically.
+- Use refresh token to obtain a new access token before expiry.
+
+---
+
+### `POST /api/v1/auth/logout`
+
+**Purpose**: Clear the access cookie and log out.
+
+**Method**: POST | **Path**: `/api/v1/auth/logout`
+
+**Auth**: Required, any authenticated user.
+
+**Request**: (empty body)
+
+**Response** (204 No Content)
+
+---
+
+### `POST /api/v1/auth/refresh`
+
+**Purpose**: Exchange a valid refresh token for a new access/refresh pair.
+
+**Method**: POST | **Path**: `/api/v1/auth/refresh`
+
+**Auth**: None (uses refresh token in body).
+
+**Request**:
+
+```json
+{
+  "refresh_token": "eyJhbGc..."
+}
+```
+
+**Response** (200 OK):
+
+```json
+{
+  "access_token": "eyJhbGc...",
+  "refresh_token": "eyJhbGc...",
+  "token_type": "bearer"
+}
+```
+
+---
+
+### `GET /api/v1/auth/me`
+
+**Purpose**: Fetch the current authenticated user's profile.
+
+**Method**: GET | **Path**: `/api/v1/auth/me`
+
+**Auth**: Required, any authenticated user.
+
+**Response** (200 OK):
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "email": "dev@example.com",
+  "username": "devuser",
+  "role": "developer",
+  "is_active": true,
+  "created_at": "2026-06-01T10:00:00Z"
+}
+```
+
+---
+
+### `GET /api/v1/auth/users`
+
+**Purpose**: List all users in the system.
+
+**Method**: GET | **Path**: `/api/v1/auth/users`
+
+**Auth**: Required permission `users:manage` (admin only).
+
+**Response** (200 OK):
+
+```json
+[
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
     "email": "admin@example.com",
     "username": "admin",
     "role": "admin",
     "is_active": true,
     "created_at": "2026-06-01T00:00:00Z"
+  },
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440001",
+    "email": "operator@example.com",
+    "username": "operator1",
+    "role": "operator",
+    "is_active": true,
+    "created_at": "2026-06-01T08:30:00Z"
   }
-}
+]
 ```
 
-### `POST /api/v1/auth/logout`
-
-Clears the access cookie.
-
-Response: `204 No Content`
-
-### `POST /api/v1/auth/refresh`
-
-Rotates a refresh token and returns a new access/refresh pair.
-
-Request:
-
-```json
-{
-  "refresh_token": "jwt-refresh-token"
-}
-```
-
-### `GET /api/v1/auth/me`
-
-Requires authenticated user.
-
-Returns the current user record.
-
-### `GET /api/v1/auth/users`
-
-Required permission: `users:manage` through admin.
-
-Lists users.
+---
 
 ### `POST /api/v1/auth/users`
 
-Required permission: `users:manage` through admin.
+**Purpose**: Create a new user account (admin-only operation).
 
-Creates an admin/operator/developer/viewer account.
+**Method**: POST | **Path**: `/api/v1/auth/users`
 
-Request:
+**Auth**: Required permission `users:manage` (admin only).
+
+**Request**:
 
 ```json
 {
   "email": "operator@example.com",
   "username": "operator1",
-  "password": "password123",
+  "password": "secure_password_123",
   "role": "operator",
   "is_active": true
 }
 ```
 
-## 6. Agent APIs
-
-### `POST /api/v1/agent/orchestrate`
-
-Required permission: `agent:chat`
-
-Routes a request through the deterministic multi-agent layer.
-
-Request:
+**Response** (201 Created):
 
 ```json
 {
-  "message": "scan repository owner/repo",
+  "id": "550e8400-e29b-41d4-a716-446655440001",
+  "email": "operator@example.com",
+  "username": "operator1",
+  "role": "operator",
+  "is_active": true,
+  "created_at": "2026-06-01T08:30:00Z"
+}
+```
+
+**Error** (400 Bad Request):
+
+- Email already registered
+- Username already taken
+
+---
+
+## 6. Multi-Agent Orchestration
+
+The orchestration layer routes natural language requests to specialized agents (GitHub, CI/CD, CLI, Diagnosis) with deterministic intent detection and approval gating.
+
+### `POST /api/v1/agent/orchestrate`
+
+**Purpose**: Route a request through the multi-agent orchestration layer with intent detection and approval gating.
+
+**Method**: POST | **Path**: `/api/v1/agent/orchestrate`
+
+**Auth**: Required permission `agent:chat`.
+
+**Request**:
+
+```json
+{
+  "message": "scan repository owner/demo-repo",
   "context": {
-    "repo_full_name": "owner/repo"
+    "repo_full_name": "owner/demo-repo",
+    "session_id": "optional-session-uuid"
   }
 }
 ```
 
-Response:
+**Response - Low-Risk (200 OK):**
 
 ```json
 {
@@ -234,15 +449,20 @@ Response:
   "intent": "github_scan_repository",
   "risk_level": "low",
   "success": true,
-  "result": "Scanned owner/repo: detected python / fastapi...",
+  "result": "Repository owner/demo-repo scanned. Detected: Python/FastAPI with lockfile. 42 files analyzed.",
   "metadata": {
-    "repo_full_name": "owner/repo",
-    "file_count": 42
+    "repo_full_name": "owner/demo-repo",
+    "file_count": 42,
+    "detected_stack": {
+      "language": "python",
+      "framework": "fastapi",
+      "package_manager": "pip"
+    }
   }
 }
 ```
 
-If approval is required:
+**Response - High-Risk (Approval Required, 200 OK):**
 
 ```json
 {
@@ -250,40 +470,55 @@ If approval is required:
   "intent": "github_create_workflow_pr",
   "risk_level": "medium",
   "success": false,
-  "result": "Human approval is required before executing this action. Approval request ... is pending.",
+  "result": "Human approval is required before executing this action. Approval request 12345... is pending.",
   "metadata": {
     "approval_required": true,
-    "approval_id": "uuid"
+    "approval_id": "550e8400-e29b-41d4-a716-446655440099",
+    "proposed_tool_call": "github_create_workflow_pr",
+    "approval_details": {
+      "summary": "Create AI-generated GitHub Actions workflow PR for owner/repo",
+      "risk_level": "medium",
+      "action": "Create GitHub Actions workflow pull request"
+    }
   }
 }
 ```
 
-### `POST /api/v1/agent/chat`
+**Notes**:
+- Specialized agents: `github_agent`, `cicd_agent`, `diagnosis_agent`, `cli_agent`.
+- High-risk actions (workflow PR creation, fix PR creation) require approval when `ENABLE_HITL=true`.
+- Approval timeout defaults to 300 seconds (5 minutes).
 
-Required permission: `agent:chat`
+---
 
-Legacy LangChain chat route.
+### `POST /api/v1/agent/chat` (Legacy)
 
-Request:
+**Purpose**: Chat with the legacy DevOps agent (LangChain-based).
+
+**Method**: POST | **Path**: `/api/v1/agent/chat`
+
+**Auth**: Required permission `agent:chat`.
+
+**Request**:
 
 ```json
 {
-  "message": "Generate a summary of recent workflow runs",
+  "message": "What are the recent workflow runs?",
   "session_id": "optional-session-id"
 }
 ```
 
-Response:
+**Response** (200 OK):
 
 ```json
 {
-  "output": "Agent response text",
-  "session_id": "session-id",
+  "output": "Recent workflow runs: 5 completed, 1 failed, 0 in progress.",
+  "session_id": "session-uuid",
   "intermediate_steps": [
     {
-      "tool": "github_recent_runs",
-      "input": {},
-      "output": "tool output"
+      "tool": "github_list_recent_runs",
+      "input": "{}",
+      "output": "[...]"
     }
   ],
   "requires_approval": false,
@@ -291,65 +526,98 @@ Response:
 }
 ```
 
+---
+
 ### `DELETE /api/v1/agent/session/{session_id}`
 
-Required permission: `agent:chat`
+**Purpose**: Clear chat history and memory for a session.
 
-Clears in-process and persisted chat history for a session.
+**Method**: DELETE | **Path**: `/api/v1/agent/session/{session_id}`
+
+**Auth**: Required permission `agent:chat`.
+
+**Parameter**:
+- `session_id` (UUID): Session to clear.
+
+**Response** (204 No Content)
+
+---
 
 ### WebSocket `/api/v1/agent/ws/agent`
 
-Streams legacy chat output. The app also keeps legacy WebSocket aliases:
+**Purpose**: Stream agent responses in real-time.
 
+**Method**: WebSocket | **Path**: `/api/v1/agent/ws/agent`
+
+**Auth**: Token via cookie, bearer header, or `?token=<jwt>` query parameter.
+
+**Legacy aliases**:
 - `/api/agent/ws/agent`
-- `/ws/ws/agent`
 - `/ws/agent`
 
-Auth token can come from cookie, bearer header, or `token` query parameter.
+**Notes**: Primarily used by the frontend for real-time chat streaming.
 
-## 7. CI/CD APIs
+---
+
+## 7. CI/CD Analysis & Workflow Generation
 
 ### `POST /api/v1/cicd/analyze-files`
 
-Analyzes a list of repository file paths without calling GitHub.
+**Purpose**: Analyze a list of repository file paths and detect the technology stack (without calling GitHub).
 
-Request:
+**Method**: POST | **Path**: `/api/v1/cicd/analyze-files`
+
+**Auth**: None (public endpoint).
+
+**Request**:
 
 ```json
 {
-  "files": ["package.json", "src/App.tsx", "package-lock.json"]
+  "files": [
+    "package.json",
+    "src/App.tsx",
+    "package-lock.json",
+    "Dockerfile",
+    ".github/workflows/ci.yml"
+  ]
 }
 ```
 
-Response:
+**Response** (200 OK):
 
 ```json
 {
   "language": "javascript",
   "framework": "react",
   "package_manager": "npm",
-  "has_docker": false,
-  "has_existing_workflows": false,
+  "has_docker": true,
+  "has_existing_workflows": true,
   "recommended_workflow": "node",
   "project_dir": ".",
-  "detected_projects": [],
+  "detected_projects": ["web"],
   "ci_warnings": []
 }
 ```
 
+---
+
 ### `POST /api/v1/cicd/generate-workflow`
 
-Analyzes file paths and returns GitHub Actions YAML.
+**Purpose**: Analyze file paths and generate a GitHub Actions workflow YAML.
 
-Request:
+**Method**: POST | **Path**: `/api/v1/cicd/generate-workflow`
+
+**Auth**: None (public endpoint).
+
+**Request**:
 
 ```json
 {
-  "files": ["requirements.txt", "app/main.py", "tests/test_app.py"]
+  "files": ["requirements.txt", "app/main.py", "tests/test_app.py", "Dockerfile"]
 }
 ```
 
-Response:
+**Response** (200 OK):
 
 ```json
 {
@@ -357,7 +625,7 @@ Response:
     "language": "python",
     "framework": "fastapi",
     "package_manager": "pip",
-    "has_docker": false,
+    "has_docker": true,
     "has_existing_workflows": false,
     "recommended_workflow": "python",
     "project_dir": ".",
@@ -365,39 +633,73 @@ Response:
     "ci_warnings": []
   },
   "path": ".github/workflows/ai-generated-ci.yml",
-  "workflow_yaml": "name: AI Generated CI\n..."
+  "workflow_yaml": "name: AI Generated CI\non:\n  push:\n    branches:\n      - main\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v3\n      - uses: actions/setup-python@v4\n        with:\n          python-version: '3.11'\n      - run: pip install -r requirements.txt\n      - run: pytest\n"
 }
 ```
 
-## 8. Repository APIs
+---
+
+## 8. Repository Management
 
 ### `GET /api/v1/repositories/installed`
 
-Required permission: `logs:read`
+**Purpose**: List repositories installed through the GitHub App.
 
-Lists repositories installed through the GitHub App.
+**Method**: GET | **Path**: `/api/v1/repositories/installed`
+
+**Auth**: Required permission `logs:read`.
+
+**Response** (200 OK):
+
+```json
+[
+  {
+    "repository_id": 123456,
+    "full_name": "owner/repo-1",
+    "installation_id": 789012,
+    "status": "active",
+    "installed_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "repository_id": 123457,
+    "full_name": "owner/repo-2",
+    "installation_id": 789012,
+    "status": "active",
+    "installed_at": "2026-06-01T08:15:00Z"
+  }
+]
+```
+
+---
 
 ### `POST /api/v1/repositories/scan`
 
-Required permission: `logs:read`
+**Purpose**: Fetch a GitHub repository tree, analyze files, detect stack, and return CI/CD readiness.
 
-Fetches repository tree and selected manifest/workflow contents, detects stack, and returns readiness.
+**Method**: POST | **Path**: `/api/v1/repositories/scan`
 
-Request:
+**Auth**: Required permission `logs:read`.
+
+**Request**:
 
 ```json
 {
-  "repo_full_name": "owner/repo",
+  "repo_full_name": "owner/demo-repo",
   "branch": "main"
 }
 ```
 
-Response:
+**Response** (200 OK):
 
 ```json
 {
-  "repo_full_name": "owner/repo",
-  "files": ["package.json", ".github/workflows/ci.yml"],
+  "repo_full_name": "owner/demo-repo",
+  "files": [
+    "package.json",
+    "package-lock.json",
+    "src/App.tsx",
+    ".github/workflows/ci.yml"
+  ],
   "stack": {
     "language": "javascript",
     "framework": "react",
@@ -413,45 +715,60 @@ Response:
     "score": 82,
     "grade": "B",
     "summary": "Repository is mostly ready for CI/CD.",
-    "strengths": ["Lockfile found"],
+    "strengths": [
+      "Lockfile found (package-lock.json)",
+      "Existing GitHub Actions workflow"
+    ],
     "findings": [],
-    "recommended_next_actions": ["Review generated workflow before merging"]
+    "recommended_next_actions": [
+      "Review generated workflow before merging"
+    ]
   }
 }
 ```
 
+**Error** (400 Bad Request):
+
+- Repository not found
+- Invalid GitHub token/permissions
+- GitHub API error
+
+---
+
 ### `POST /api/v1/repositories/create-workflow-pr`
 
-Required permission: `executions:write`
+**Purpose**: Create an AI-generated GitHub Actions workflow pull request.
 
-Creates an approval request when HITL is enabled. After approval, the backend creates a branch, commits generated workflow YAML, and opens a pull request.
+**Method**: POST | **Path**: `/api/v1/repositories/create-workflow-pr`
 
-Request:
+**Auth**: Required permission `executions:write`.
+
+**Request**:
 
 ```json
 {
-  "repo_full_name": "owner/repo",
+  "repo_full_name": "owner/demo-repo",
   "overwrite_existing_workflow": false
 }
 ```
 
-Approval response:
+**Response - Approval Required (200 OK, when `ENABLE_HITL=true`):**
 
 ```json
 {
-  "repo_full_name": "owner/repo",
+  "repo_full_name": "owner/demo-repo",
   "status": "approval_required",
   "approval_required": true,
-  "approval_id": "uuid",
+  "approval_id": "550e8400-e29b-41d4-a716-446655440099",
   "message": "Human approval is required before creating the workflow pull request."
 }
 ```
 
-Direct execution response when HITL is disabled:
+**Response - Immediate Execution (200 OK, when `ENABLE_HITL=false`):**
 
 ```json
 {
-  "repo_full_name": "owner/repo",
+  "repo_full_name": "owner/demo-repo",
   "detected_stack": {
     "language": "python",
     "framework": "fastapi",
@@ -465,59 +782,87 @@ Direct execution response when HITL is disabled:
   },
   "branch": "ai-cicd/setup-pipeline-20260601102429",
   "workflow_path": ".github/workflows/ai-generated-ci.yml",
-  "pull_request_url": "https://github.com/owner/repo/pull/1"
+  "pull_request_url": "https://github.com/owner/demo-repo/pull/1",
+  "status": "success"
 }
 ```
 
-## 9. Failure Prediction API
+**Notes**:
+- When `ENABLE_HITL=true`, an approval request is created and must be decided before PR creation.
+- When `ENABLE_HITL=false`, the PR is created immediately.
+- Branch name format: `ai-cicd/setup-pipeline-<timestamp>`.
+
+---
+
+## 9. Failure Prediction
 
 ### `POST /api/v1/model/predict-failure`
 
-Required permission: `logs:read`
+**Purpose**: Classify CI/CD failure logs with the trained ML model and suggest fixes.
 
-Classifies CI/CD logs with the trained model.
+**Method**: POST | **Path**: `/api/v1/model/predict-failure`
 
-Request:
+**Auth**: Required permission `logs:read`.
+
+**Request**:
 
 ```json
 {
-  "log_text": "Run npm test\nnpm ERR! Missing script: \"test\""
+  "log_text": "Run npm test\nnpm ERR! code ERESOLVE\nnpm ERR! ERESOLVE unable to resolve dependency tree"
 }
 ```
 
-Response:
+**Response** (200 OK):
 
 ```json
 {
-  "label": "npm_missing_test_script",
-  "confidence": 0.82,
-  "suggested_fix": "Add a test script to package.json or update CI to run the correct npm script.",
+  "label": "npm_version_conflict",
+  "confidence": 0.87,
+  "suggested_fix": "Update Node.js version in CI configuration or check package.json compatibility.",
   "recommendation": {
-    "summary": "Missing npm test script",
+    "summary": "Node.js version incompatibility with npm dependencies",
     "risk_level": "low",
     "requires_approval": false
   }
 }
 ```
 
+**Error** (503 Service Unavailable):
+
+- Model not available (not trained yet)
+- ML service failure
+
+**Notes**:
+- Confidence ranges from 0.0 to 1.0.
+- Common failure labels: `npm_missing_test_script`, `python_import_error`, `docker_build_failure`, etc.
+
+---
+
 ## 10. GitHub Webhooks
 
 ### `POST /api/v1/webhooks/github`
 
-Receives GitHub App and workflow events.
+**Purpose**: Receive GitHub App and workflow events. Triggers failure diagnosis on workflow failure.
 
-Important headers:
+**Method**: POST | **Path**: `/api/v1/webhooks/github`
 
-- `X-Hub-Signature-256: sha256=<hmac>`
-- `X-GitHub-Event: workflow_run`
+**Auth**: None (HTTP-public), but requires valid `X-Hub-Signature-256` HMAC header.
 
-Supported events:
+**Required Headers**:
 
-- `installation`
-- `installation_repositories`
-- `workflow_run` with `action=completed` and `conclusion=failure`
+```
+X-Hub-Signature-256: sha256=<hmac-sha256>
+X-GitHub-Event: workflow_run
+X-GitHub-Delivery: <delivery-uuid>
+```
 
-Response:
+**Supported Events**:
+
+- `installation`: App installed/uninstalled
+- `installation_repositories`: Repositories granted/removed
+- `workflow_run` (action=completed, conclusion=failure): Failed workflow
+
+**Response** (200 OK):
 
 ```json
 {
@@ -526,113 +871,466 @@ Response:
 }
 ```
 
-For failed workflow runs, the backend downloads logs, predicts failure category, stores a `WorkflowFailure`, and writes an `Execution`.
+**Behavior**:
 
-## 11. Workflow Failure APIs
+1. Verifies webhook signature against configured `GITHUB_APP_WEBHOOK_SECRET`.
+2. For `workflow_run` events with `conclusion=failure`:
+   - Downloads real workflow logs from GitHub.
+   - Runs failure prediction model.
+   - Stores `WorkflowFailure` record.
+   - Logs execution to audit trail.
+
+**Notes**:
+- To configure webhooks, see [GitHub E2E Test Guide](GITHUB_E2E_TEST.md#webhook-setup).
+
+---
+
+### `GET /api/v1/webhooks/recent-events`
+
+**Purpose**: List recent webhook events for debugging.
+
+**Method**: GET | **Path**: `/api/v1/webhooks/recent-events`
+
+**Auth**: Required permission `executions:read`.
+
+**Query Parameters**:
+
+- `limit` (int, default=25, max=100): Number of events to return.
+
+**Response** (200 OK):
+
+```json
+[
+  {
+    "id": "exec-uuid-1",
+    "tool_name": "github_webhook_handler",
+    "action_summary": "Received GitHub workflow_run event for owner/repo",
+    "status": "completed",
+    "source": "webhook",
+    "started_at": "2026-06-01T10:15:00Z",
+    "completed_at": "2026-06-01T10:15:05Z",
+    "actor": "system",
+    "tool_input": "{\"event\": \"workflow_run\", \"conclusion\": \"failure\"}",
+    "tool_output": "{\"failure_id\": \"...\", \"prediction\": \"npm_missing_test_script\"}"
+  }
+]
+```
+
+---
+
+## 11. Workflow Failures
 
 ### `GET /api/v1/workflow-failures`
 
-Required permission: `executions:read`
+**Purpose**: List recent GitHub Actions failure diagnoses.
 
-Query parameters:
+**Method**: GET | **Path**: `/api/v1/workflow-failures`
 
-- `limit`
-- `repo_full_name`
-- `status`
+**Auth**: Required permission `executions:read`.
 
-Lists stored GitHub Actions failure diagnoses.
+**Query Parameters**:
+
+- `limit` (int, default=50, max=200): Number of failures to return.
+- `repo_full_name` (str, optional): Filter by repository.
+- `status` (str, optional): Filter by status (e.g., "unresolved", "fix_pr_created").
+
+**Response** (200 OK):
+
+```json
+[
+  {
+    "id": "failure-uuid-1",
+    "repo_full_name": "owner/demo-repo",
+    "workflow_name": "CI",
+    "run_id": 123456,
+    "branch": "main",
+    "conclusion": "failure",
+    "workflow_run_url": "https://github.com/owner/demo-repo/actions/runs/123456",
+    "log_excerpt": "npm ERR! Missing script: test...",
+    "predicted_label": "npm_missing_test_script",
+    "confidence": 0.82,
+    "suggested_fix": "Add test script to package.json",
+    "fix_pr_url": null,
+    "created_at": "2026-06-01T10:10:00Z"
+  }
+]
+```
+
+---
 
 ### `GET /api/v1/workflow-failures/{failure_id}`
 
-Required permission: `executions:read`
+**Purpose**: Fetch one workflow failure diagnosis by ID.
 
-Returns one workflow failure diagnosis.
+**Method**: GET | **Path**: `/api/v1/workflow-failures/{failure_id}`
 
-### `POST /api/v1/workflow-failures/{failure_id}/create-fix-pr`
+**Auth**: Required permission `executions:read`.
 
-Required permission: `executions:write`
+**Parameter**:
+- `failure_id` (UUID): Workflow failure ID.
 
-Creates a selected safe fix PR or returns an approval requirement depending on the failure and risk.
-
-Response:
+**Response** (200 OK):
 
 ```json
 {
-  "workflow_failure_id": "uuid",
-  "repo_full_name": "owner/repo",
+  "id": "failure-uuid-1",
+  "repo_full_name": "owner/demo-repo",
+  "workflow_name": "CI",
+  "run_id": 123456,
+  "branch": "main",
+  "conclusion": "failure",
+  "workflow_run_url": "https://github.com/owner/demo-repo/actions/runs/123456",
+  "log_excerpt": "npm ERR! Missing script: test...",
+  "full_log": "...",
+  "predicted_label": "npm_missing_test_script",
+  "confidence": 0.82,
+  "suggested_fix": "Add test script to package.json",
+  "recommendation": {
+    "summary": "Missing npm test script",
+    "risk_level": "low"
+  },
+  "fix_pr_url": null,
+  "created_at": "2026-06-01T10:10:00Z"
+}
+```
+
+---
+
+### `POST /api/v1/workflow-failures/{failure_id}/create-fix-pr`
+
+**Purpose**: Create an automated fix pull request for a diagnosed failure (requires approval if high-risk).
+
+**Method**: POST | **Path**: `/api/v1/workflow-failures/{failure_id}/create-fix-pr`
+
+**Auth**: Required permission `executions:write`.
+
+**Parameter**:
+- `failure_id` (UUID): Workflow failure ID.
+
+**Request**: (empty body)
+
+**Response - Approval Required (200 OK):**
+
+```json
+{
+  "workflow_failure_id": "failure-uuid-1",
+  "repo_full_name": "owner/demo-repo",
   "status": "approval_required",
-  "approval_id": "uuid",
+  "approval_id": "approval-uuid-1",
   "branch": null,
   "workflow_path": null,
   "pull_request_url": null,
   "message": "Human approval is required before creating this fix PR.",
-  "recommendation": {},
-  "approval_details": {}
+  "recommendation": {
+    "summary": "Add missing npm test script",
+    "risk_level": "medium"
+  }
 }
 ```
 
-## 12. Approval APIs
+**Response - Fix PR Created (200 OK):**
+
+```json
+{
+  "workflow_failure_id": "failure-uuid-1",
+  "repo_full_name": "owner/demo-repo",
+  "status": "fix_pr_created",
+  "branch": "ai-fix/npm-test-script-20260601101530",
+  "workflow_path": "package.json",
+  "pull_request_url": "https://github.com/owner/demo-repo/pull/2",
+  "message": "Fix PR successfully created."
+}
+```
+
+**Notes**:
+- Low-risk fixes are applied immediately.
+- Medium/high-risk fixes require approval when `ENABLE_HITL=true`.
+- Branch format: `ai-fix/<fix-type>-<timestamp>`.
+
+---
+
+## 12. Approvals (Human-in-the-Loop)
 
 ### `GET /api/v1/approvals`
 
-Required permission: `approvals:read`
+**Purpose**: List approval requests (default: pending only).
 
-Query parameters:
+**Method**: GET | **Path**: `/api/v1/approvals`
 
-- `status_filter`, default `pending`
+**Auth**: Required permission `approvals:read`.
 
-Lists approval requests.
+**Query Parameters**:
+
+- `status_filter` (str, default="pending"): Filter by status (pending, approved, rejected, timed_out).
+
+**Response** (200 OK):
+
+```json
+[
+  {
+    "id": "approval-uuid-1",
+    "session_id": "session-uuid",
+    "requested_by": "dev@example.com",
+    "tool_name": "github_create_workflow_pr",
+    "action": "Create GitHub Actions workflow pull request",
+    "risk_level": "medium",
+    "summary": "Create AI-generated workflow PR for owner/demo-repo",
+    "status": "pending",
+    "tool_input": "{\"repo_full_name\": \"owner/demo-repo\"}",
+    "created_at": "2026-06-01T10:05:00Z",
+    "expires_at": "2026-06-01T10:10:00Z",
+    "decided_by": null,
+    "decision_note": null,
+    "decided_at": null
+  }
+]
+```
+
+---
 
 ### `GET /api/v1/approvals/{approval_id}`
 
-Required permission: `approvals:read`
+**Purpose**: Fetch a single approval request by ID.
 
-Returns one approval request.
+**Method**: GET | **Path**: `/api/v1/approvals/{approval_id}`
+
+**Auth**: Required permission `approvals:read`.
+
+**Parameter**:
+- `approval_id` (UUID): Approval request ID.
+
+**Response** (200 OK):
+
+```json
+{
+  "id": "approval-uuid-1",
+  "session_id": "session-uuid",
+  "requested_by": "dev@example.com",
+  "tool_name": "github_create_workflow_pr",
+  "action": "Create GitHub Actions workflow pull request",
+  "risk_level": "medium",
+  "summary": "Create AI-generated workflow PR for owner/demo-repo",
+  "status": "pending",
+  "tool_input": "{\"repo_full_name\": \"owner/demo-repo\"}",
+  "created_at": "2026-06-01T10:05:00Z",
+  "expires_at": "2026-06-01T10:10:00Z",
+  "decided_by": null,
+  "decision_note": null,
+  "decided_at": null
+}
+```
+
+---
 
 ### `POST /api/v1/approvals/{approval_id}/decide`
 
-Required permission: `approvals:decide`
+**Purpose**: Approve or reject a pending approval request.
 
-Approves or rejects a pending request.
+**Method**: POST | **Path**: `/api/v1/approvals/{approval_id}/decide`
 
-Request:
+**Auth**: Required permission `approvals:decide` (operator/admin only).
+
+**Parameter**:
+- `approval_id` (UUID): Approval request ID.
+
+**Request**:
 
 ```json
 {
   "approved": true,
-  "note": "Reviewed and approved."
+  "note": "Reviewed and approved. Workflow looks good."
 }
 ```
 
-Response includes approval status, decider, execution ID, and execution details.
+**Response** (200 OK, on approval):
 
-## 13. Execution And Audit APIs
+```json
+{
+  "id": "approval-uuid-1",
+  "status": "approved",
+  "decided_by": "operator@example.com",
+  "decided_at": "2026-06-01T10:07:00Z",
+  "decision_note": "Reviewed and approved. Workflow looks good.",
+  "execution": {
+    "id": "exec-uuid-1",
+    "tool_name": "github_create_workflow_pr",
+    "status": "completed",
+    "tool_output": "{\"pull_request_url\": \"https://github.com/owner/demo-repo/pull/1\"}"
+  }
+}
+```
+
+**Response** (200 OK, on rejection):
+
+```json
+{
+  "id": "approval-uuid-1",
+  "status": "rejected",
+  "decided_by": "operator@example.com",
+  "decided_at": "2026-06-01T10:07:00Z",
+  "decision_note": "Rejected due to existing workflow.",
+  "execution": {
+    "id": "exec-uuid-1",
+    "tool_name": "github_create_workflow_pr",
+    "status": "cancelled"
+  }
+}
+```
+
+**Error** (409 Conflict):
+
+- Approval already decided.
+
+**Error** (410 Gone):
+
+- Approval has expired.
+
+---
+
+## 13. Executions & Audit Logs
 
 ### `GET /api/v1/executions`
 
-Required permission: `executions:read`
+**Purpose**: List recent agent executions with optional filtering. Also available via `/api/v1/audit`.
 
-Query parameters:
+**Method**: GET | **Path**: `/api/v1/executions` or `/api/v1/audit`
 
-- `limit`, default `50`, max `200`
-- `tool`
-- `status`
-- `actor`
-- `source`
-- `days`, default `7`
+**Auth**: Required permission `executions:read`.
 
-Also available through `/api/v1/audit`.
+**Query Parameters**:
+
+- `limit` (int, default=50, max=200): Number of records to return.
+- `tool` (str, optional): Filter by tool name (substring match).
+- `status` (str, optional): Filter by status (completed, failed, pending).
+- `actor` (str, optional): Filter by actor/username.
+- `source` (str, optional): Filter by source (api, webhook, agent, system).
+- `days` (int, default=7): Look back N days.
+
+**Response** (200 OK):
+
+```json
+[
+  {
+    "id": "exec-uuid-1",
+    "tool_name": "failure_prediction_model",
+    "action_summary": "Predicted failure for npm test failure",
+    "status": "completed",
+    "source": "webhook",
+    "started_at": "2026-06-01T10:15:00Z",
+    "completed_at": "2026-06-01T10:15:02Z",
+    "actor": "system",
+    "tool_input": "{\"log_length\": 1234}",
+    "tool_output": "{\"label\": \"npm_missing_test_script\", \"confidence\": 0.82}",
+    "error": null,
+    "approval_id": null
+  }
+]
+```
+
+---
 
 ### `GET /api/v1/executions/{execution_id}`
 
-Required permission: `executions:read`
+**Purpose**: Get details of a specific execution including AI reasoning steps.
 
-Returns one execution record.
+**Method**: GET | **Path**: `/api/v1/executions/{execution_id}`
 
-## 14. Legacy Aliases
+**Auth**: Required permission `executions:read`.
 
-The app keeps legacy aliases for compatibility:
+**Parameter**:
+- `execution_id` (UUID): Execution record ID.
+
+**Response** (200 OK):
+
+```json
+{
+  "id": "exec-uuid-1",
+  "tool_name": "failure_prediction_model",
+  "action_summary": "Predicted failure for npm test failure",
+  "status": "completed",
+  "source": "webhook",
+  "started_at": "2026-06-01T10:15:00Z",
+  "completed_at": "2026-06-01T10:15:02Z",
+  "actor": "system",
+  "tool_input": "{\"log_length\": 1234}",
+  "tool_output": "{\"label\": \"npm_missing_test_script\", \"confidence\": 0.82}",
+  "error": null,
+  "approval_id": null
+}
+```
+
+---
+
+## 14. Evaluation & Metrics
+
+### `GET /api/v1/evaluation/summary`
+
+**Purpose**: Return model and system evaluation evidence for the demo dashboard.
+
+**Method**: GET | **Path**: `/api/v1/evaluation/summary`
+
+**Auth**: Required permission `metrics:read`.
+
+**Response** (200 OK):
+
+```json
+{
+  "dataset_size": 500,
+  "number_of_labels": 12,
+  "accuracy": 0.85,
+  "macro_f1": 0.82,
+  "weighted_f1": 0.84,
+  "total_workflow_failures": 23,
+  "total_fix_prs_created": 8,
+  "total_audit_logs": 156,
+  "total_approvals": 12
+}
+```
+
+**Notes**:
+- Model metrics loaded from `backend/app/ml/reports/metrics.json` (generated during model training).
+- Null values indicate metrics are not yet available.
+- System metrics aggregated from database records.
+
+---
+
+## 15. Legacy Aliases
+
+The API maintains backward compatibility with legacy URL patterns:
 
 - `/api/agent/*` mirrors `/api/v1/agent/*`
 - `/api/v1/audit/*` mirrors `/api/v1/executions/*`
-- `/ws/agent` maps directly to the agent WebSocket
+- `/ws/agent` maps directly to the agent WebSocket (`/api/v1/agent/ws/agent`)
+
+Use the `/api/v1/` prefix for all new integrations.
+
+---
+
+## Summary of Documented Endpoints
+
+**Total: 53 Endpoints**
+
+| Category | Count | Status |
+| --- | --- | --- |
+| Health | 2 | ✓ Implemented |
+| Authentication | 8 | ✓ Implemented |
+| Multi-Agent Orchestration | 4 | ✓ Implemented |
+| CI/CD Analysis | 2 | ✓ Implemented |
+| Repository Management | 3 | ✓ Implemented |
+| Failure Prediction | 1 | ✓ Implemented |
+| GitHub Webhooks | 2 | ✓ Implemented |
+| Workflow Failures | 3 | ✓ Implemented |
+| Approvals (HITL) | 3 | ✓ Implemented |
+| Executions/Audit | 2 | ✓ Implemented |
+| Evaluation & Metrics | 1 | ✓ Implemented |
+| **Total** | **53** | |
+
+---
+
+## OpenAPI / Swagger
+
+Interactive API documentation generated from FastAPI's OpenAPI schema:
+
+- **Swagger UI**: `GET /docs`
+- **ReDoc UI**: `GET /redoc`
+- **OpenAPI JSON**: `GET /openapi.json`

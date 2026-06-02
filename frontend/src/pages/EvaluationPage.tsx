@@ -1,15 +1,17 @@
+import { getDebugHint, getUserFriendlyError } from "@/lib/errorMessages";
 import { evaluationService, type EvaluationSummary } from "@/services/api";
 import {
-  Activity,
-  BarChart3,
-  CheckSquare,
-  ClipboardList,
-  Database,
-  GitPullRequest,
-  Loader2,
-  Percent,
-  Tags,
-  TriangleAlert,
+    Activity,
+    AlertCircle,
+    BarChart3,
+    CheckSquare,
+    ClipboardList,
+    Database,
+    GitPullRequest,
+    Loader2,
+    Percent,
+    Tags,
+    TriangleAlert,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -92,11 +94,7 @@ export default function EvaluationPage() {
       } catch (err: any) {
         if (!mounted) return;
         setSummary(null);
-        setError(
-          err.response?.data?.detail ||
-            err.message ||
-            "Unable to load evaluation summary.",
-        );
+        setError(getUserFriendlyError(err));
       } finally {
         if (mounted) setLoading(false);
       }
@@ -141,8 +139,18 @@ export default function EvaluationPage() {
               />
             </div>
           ) : error ? (
-            <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200">
-              {error}
+            <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-700 dark:text-red-200">
+              <div className="flex items-start gap-3">
+                <AlertCircle size={18} className="mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold">{error}</p>
+                  {getDebugHint(error) && (
+                    <p className="mt-2 text-xs opacity-80">
+                      Tip: {getDebugHint(error)}
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

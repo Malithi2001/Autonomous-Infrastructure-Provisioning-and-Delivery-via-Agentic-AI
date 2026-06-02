@@ -9,25 +9,31 @@ from docker.errors import DockerException, NotFound, APIError
 
 from app.core.logging import logger
 
-try:
-    client = docker.from_env()
-except DockerException:
-    client = None
-    logger.warning("docker.client.unavailable", detail="Docker socket not accessible.")
+_client = None
+_client_checked = False
 
 
 def _check_client():
-    if client is None:
+    global _client, _client_checked
+    if not _client_checked:
+        _client_checked = True
+        try:
+            _client = docker.from_env(timeout=3)
+        except DockerException:
+            _client = None
+            logger.warning("docker.client.unavailable", detail="Docker socket not accessible.")
+    if _client is None:
         raise RuntimeError("Docker client is not available. Ensure Docker is running and the socket is mounted.")
+    return _client
 
 
 # ── Read Operations ───────────────────────────────────────────────────────────
 
 def list_containers(all_containers: bool = False) -> str:
     """List Docker containers."""
-    _check_client()
+    docker_client = _check_client()
     try:
-        containers = client.containers.list(all=all_containers)
+        containers = docker_client.containers.list(all=all_containers)
         if not containers:
             return "No containers found."
         rows = []
@@ -45,9 +51,9 @@ def list_containers(all_containers: bool = False) -> str:
 
 def get_container_logs(container_name: str, tail_lines: int = 100) -> str:
     """Fetch container logs."""
-    _check_client()
+    docker_client = _check_client()
     try:
-        container = client.containers.get(container_name)
+        container = docker_client.containers.get(container_name)
         logs = container.logs(tail=tail_lines, timestamps=True).decode("utf-8")
         return logs or "(no logs available)"
     except NotFound:
@@ -60,9 +66,9 @@ def get_container_logs(container_name: str, tail_lines: int = 100) -> str:
 
 def restart_container(container_name: str) -> str:
     """Restart a container — used in self-healing workflows."""
-    _check_client()
+    docker_client = _check_client()
     try:
-        container = client.containers.get(container_name)
+        container = docker_client.containers.get(container_name)
         container.restart(timeout=30)
         logger.info("docker.restart", container=container_name)
         return f"✅ Container '{container_name}' restarted successfully."
@@ -74,9 +80,9 @@ def restart_container(container_name: str) -> str:
 
 def start_container(container_name: str) -> str:
     """Start a stopped container."""
-    _check_client()
+    docker_client = _check_client()
     try:
-        container = client.containers.get(container_name)
+        container = docker_client.containers.get(container_name)
         container.start()
         logger.info("docker.start", container=container_name)
         return f"✅ Container '{container_name}' started."
@@ -88,9 +94,9 @@ def start_container(container_name: str) -> str:
 
 def stop_container(container_name: str, timeout: int = 10) -> str:
     """Stop a running container."""
-    _check_client()
+    docker_client = _check_client()
     try:
-        container = client.containers.get(container_name)
+        container = docker_client.containers.get(container_name)
         container.stop(timeout=timeout)
         logger.info("docker.stop", container=container_name)
         return f"✅ Container '{container_name}' stopped."
@@ -108,9 +114,9 @@ def run_container(
     detach: bool = True,
 ) -> str:
     """Run a new container from an image."""
-    _check_client()
+    docker_client = _check_client()
     try:
-        container = client.containers.run(
+        container = docker_client.containers.run(
             image=image,
             name=name,
             ports=ports or {},

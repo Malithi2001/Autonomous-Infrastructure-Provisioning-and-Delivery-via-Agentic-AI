@@ -1,14 +1,16 @@
-import { useEffect, useState } from "react";
-import {
-  CheckCircle,
-  XCircle,
-  Clock,
-  AlertTriangle,
-  ShieldCheck,
-  Loader2,
-} from "lucide-react";
+import { getDebugHint, getUserFriendlyError } from "@/lib/errorMessages";
 import { approvalService } from "@/services/api";
 import { formatDistanceToNow } from "date-fns";
+import {
+    AlertCircle,
+    AlertTriangle,
+    CheckCircle,
+    Clock,
+    Loader2,
+    ShieldCheck,
+    XCircle,
+} from "lucide-react";
+import { useEffect, useState } from "react";
 
 interface Approval {
   id: string;
@@ -85,11 +87,7 @@ export default function ApprovalsPage() {
       const data = await approvalService.list();
       setApprovals(data);
     } catch (err: any) {
-      setError(
-        err.response?.data?.detail ||
-          err.message ||
-          "Unable to load approval requests.",
-      );
+      setError(getUserFriendlyError(err));
     } finally {
       setLoading(false);
     }
@@ -107,11 +105,7 @@ export default function ApprovalsPage() {
       await approvalService.decide(id, approved);
       await fetchApprovals();
     } catch (err: any) {
-      setError(
-        err.response?.data?.detail ||
-          err.message ||
-          "Unable to submit this approval decision.",
-      );
+      setError(getUserFriendlyError(err));
     } finally {
       setDecidingId(null);
     }
@@ -141,8 +135,20 @@ export default function ApprovalsPage() {
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
           </div>
         ) : error ? (
-          <div className="mx-auto max-w-3xl rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-700 dark:text-red-200">
-            {error}
+          <div className="mx-auto max-w-3xl">
+            <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-red-700 dark:text-red-200">
+              <div className="flex items-start gap-3">
+                <AlertCircle size={18} className="mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold">{error}</p>
+                  {getDebugHint(error) && (
+                    <p className="mt-2 text-xs opacity-80">
+                      Tip: {getDebugHint(error)}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         ) : approvals.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center text-center">
