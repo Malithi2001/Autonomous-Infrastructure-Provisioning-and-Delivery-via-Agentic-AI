@@ -1,24 +1,26 @@
-import { useEffect, useState } from "react";
-import {
-  ChevronDown,
-  ChevronRight,
-  ExternalLink,
-  GitBranch,
-  GitPullRequest,
-  Loader2,
-  RefreshCw,
-  ShieldCheck,
-  TriangleAlert,
-} from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
-import {
-  workflowFailureService,
-  type WorkflowFailure,
-  type WorkflowFailureFixPRResult,
-} from "@/services/api";
+import { getDebugHint, getUserFriendlyError } from "@/lib/errorMessages";
 import { hasPermission } from "@/lib/rbac";
+import {
+    workflowFailureService,
+    type WorkflowFailure,
+    type WorkflowFailureFixPRResult,
+} from "@/services/api";
 import { useAuthStore } from "@/store/authStore";
 import clsx from "clsx";
+import { formatDistanceToNow } from "date-fns";
+import {
+    AlertCircle,
+    ChevronDown,
+    ChevronRight,
+    ExternalLink,
+    GitBranch,
+    GitPullRequest,
+    Loader2,
+    RefreshCw,
+    ShieldCheck,
+    TriangleAlert,
+} from "lucide-react";
+import { useEffect, useState } from "react";
 
 function relativeTime(value?: string | null) {
   if (!value) return "time unknown";
@@ -159,7 +161,17 @@ function FailureDetails({
           )}
           {actionError && (
             <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-200">
-              {actionError}
+              <div className="flex items-start gap-2">
+                <AlertCircle size={14} className="mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-semibold">{actionError}</p>
+                  {getDebugHint(actionError) && (
+                    <p className="mt-1 text-xs opacity-80">
+                      Tip: {getDebugHint(actionError)}
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -286,12 +298,7 @@ export default function WorkflowFailuresPage() {
         if (mounted) setFailures(data);
       })
       .catch((err: any) => {
-        if (mounted)
-          setError(
-            err.response?.data?.detail ||
-              err.message ||
-              "Unable to load workflow failures.",
-          );
+        if (mounted) setError(getUserFriendlyError(err));
       })
       .finally(() => {
         if (mounted) setLoading(false);
@@ -329,10 +336,7 @@ export default function WorkflowFailuresPage() {
     } catch (err: any) {
       setActionErrors((current) => ({
         ...current,
-        [failure.id]:
-          err.response?.data?.detail ||
-          err.message ||
-          "Unable to create a fix pull request.",
+        [failure.id]: getUserFriendlyError(err),
       }));
     } finally {
       setCreatingFixPrId(null);
@@ -340,8 +344,8 @@ export default function WorkflowFailuresPage() {
   };
 
   return (
-    <div className="flex h-full flex-col bg-surface-900">
-      <div className="shrink-0 border-b border-surface-600 bg-surface-900/90 px-6 py-4 backdrop-blur">
+    <div className="flex h-full flex-col">
+      <div className="border-b border-surface-600 bg-surface-900/80 px-4 py-4 md:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-red-500/30 bg-red-500/10">
@@ -377,8 +381,18 @@ export default function WorkflowFailuresPage() {
             <Loader2 size={24} className="animate-spin text-primary-500" />
           </div>
         ) : error ? (
-          <div className="mx-auto max-w-3xl rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-700 dark:text-red-200">
-            {error}
+          <div className="mx-auto max-w-3xl rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-red-700 dark:text-red-200">
+            <div className="flex items-start gap-3">
+              <AlertCircle size={18} className="mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-semibold">{error}</p>
+                {getDebugHint(error) && (
+                  <p className="mt-2 text-xs opacity-80">
+                    Tip: {getDebugHint(error)}
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
         ) : failures.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center text-center">

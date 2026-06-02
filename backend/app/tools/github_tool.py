@@ -72,7 +72,6 @@ def _get_client(token: str | None = None) -> Github:
                 "GITHUB_TOKEN is not configured. "
                 "Set it in backend/.env to enable GitHub integration."
             )
-        # TODO: Replace PAT auth with a GitHub App installation token flow.
         _gh_client = Github(settings.GITHUB_TOKEN)
     return _gh_client
 
@@ -660,7 +659,6 @@ def _create_workflow_pr_from_yaml(
 
     branch_name = _workflow_branch_name(repository)
 
-    # TODO: Use a GitHub App installation token here before enabling multi-tenant repository writes.
     create_branch(repo_full_name, base_branch, branch_name, token=token)
     file_result = create_or_update_file(
         repo_full_name,
@@ -739,11 +737,11 @@ def create_workflow_pr(
     }
 
 
-def list_workflows(repo_full_name: str = "") -> str:
+def list_workflows(repo_full_name: str = "", *, token: str | None = None) -> str:
     """List all workflows in a GitHub repository."""
     repo_full_name = repo_full_name or _default_repo()
     try:
-        repo = _get_client().get_repo(repo_full_name)
+        repo = _get_client(token).get_repo(repo_full_name)
         workflows = repo.get_workflows()
         if workflows.totalCount == 0:
             return f"No workflows found in '{repo_full_name}'."
@@ -758,11 +756,13 @@ def trigger_workflow(
     workflow_id: str = "",
     ref: str = "main",
     inputs: dict | None = None,
+    *,
+    token: str | None = None,
 ) -> str:
     """Trigger a GitHub Actions workflow_dispatch event."""
     repo_full_name = repo_full_name or _default_repo()
     try:
-        repo = _get_client().get_repo(repo_full_name)
+        repo = _get_client(token).get_repo(repo_full_name)
         workflow = repo.get_workflow(workflow_id)
         success = workflow.create_dispatch(ref=ref, inputs=inputs or {})
         if success:
@@ -776,11 +776,11 @@ def trigger_workflow(
         return f"GitHub API error: {e.data.get('message', str(e))}"
 
 
-def get_workflow_run_status(repo_full_name: str = "", run_id: int = 0) -> str:
+def get_workflow_run_status(repo_full_name: str = "", run_id: int = 0, *, token: str | None = None) -> str:
     """Get status of a specific workflow run."""
     repo_full_name = repo_full_name or _default_repo()
     try:
-        repo = _get_client().get_repo(repo_full_name)
+        repo = _get_client(token).get_repo(repo_full_name)
         run = repo.get_workflow_run(run_id)
         return (
             f"Run #{run.run_number} — {run.name}\n"
@@ -794,11 +794,11 @@ def get_workflow_run_status(repo_full_name: str = "", run_id: int = 0) -> str:
         return f"GitHub API error: {e.data.get('message', str(e))}"
 
 
-def list_recent_runs(repo_full_name: str = "", limit: int = 5) -> str:
+def list_recent_runs(repo_full_name: str = "", limit: int = 5, *, token: str | None = None) -> str:
     """List the most recent workflow runs for a repository."""
     repo_full_name = repo_full_name or _default_repo()
     try:
-        repo = _get_client().get_repo(repo_full_name)
+        repo = _get_client(token).get_repo(repo_full_name)
         runs = repo.get_workflow_runs()
         lines = []
         for run in list(runs)[:limit]:
@@ -814,11 +814,11 @@ def list_recent_runs(repo_full_name: str = "", limit: int = 5) -> str:
         return f"GitHub API error: {e.data.get('message', str(e))}"
 
 
-def get_repo_info(repo_full_name: str = "") -> str:
+def get_repo_info(repo_full_name: str = "", *, token: str | None = None) -> str:
     """Return basic metadata about a GitHub repository."""
     repo_full_name = repo_full_name or _default_repo()
     try:
-        repo = _get_client().get_repo(repo_full_name)
+        repo = _get_client(token).get_repo(repo_full_name)
         return (
             f"📦 {repo.full_name}\n"
             f"  Description  : {repo.description or '(none)'}\n"

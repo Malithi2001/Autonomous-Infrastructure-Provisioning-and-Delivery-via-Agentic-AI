@@ -74,11 +74,32 @@ _stop_container_hitl = _hitl_wrap(
     summary_template="Stop container '{container_name}'",
 )
 
+_start_container_hitl = _hitl_wrap(
+    start_container,
+    tool_name="docker_start_container",
+    risk_level="medium",
+    summary_template="Start container '{container_name}'",
+)
+
+_restart_container_hitl = _hitl_wrap(
+    restart_container,
+    tool_name="docker_restart_container",
+    risk_level="medium",
+    summary_template="Restart container '{container_name}'",
+)
+
 _run_container_hitl = _hitl_wrap(
     run_container,
     tool_name="docker_run_container",
     risk_level="high",
     summary_template="Run new container '{name}' from image '{image}'",
+)
+
+_shell_command_hitl = _hitl_wrap(
+    execute_safe_shell_command,
+    tool_name="execute_shell_command",
+    risk_level="high",
+    summary_template="Execute allowlisted shell command '{command}'",
 )
 
 _trigger_workflow_hitl = _hitl_wrap(
@@ -160,11 +181,11 @@ def get_all_tools(user_role: str = "developer") -> list:
 
     developer_tools = [
         StructuredTool.from_function(
-            func=restart_container,
+            func=_restart_container_hitl,
             name="docker_restart_container",
             description=(
                 "Restart a Docker container by name for development/staging self-healing. "
-                "Do not use for production workloads without escalation."
+                "MEDIUM RISK: requires HITL approval before execution."
             ),
         ),
     ]
@@ -180,9 +201,9 @@ def get_all_tools(user_role: str = "developer") -> list:
             ),
         ),
         StructuredTool.from_function(
-            func=start_container,
+            func=_start_container_hitl,
             name="docker_start_container",
-            description="Start a stopped Docker container.",
+            description="Start a stopped Docker container. MEDIUM RISK: requires HITL approval.",
         ),
         StructuredTool.from_function(
             func=_stop_container_hitl,
@@ -201,11 +222,11 @@ def get_all_tools(user_role: str = "developer") -> list:
             ),
         ),
         StructuredTool.from_function(
-            func=execute_safe_shell_command,
+            func=_shell_command_hitl,
             name="execute_shell_command",
             description=(
                 "Execute a safe, allowlisted shell command on the server. "
-                "Only pre-approved commands are permitted."
+                "HIGH RISK: requires HITL approval and only pre-approved commands are permitted."
             ),
         ),
     ]

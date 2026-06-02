@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.database import Base
-from app.models.models import ApprovalRequest, Execution
+from app.models.models import ApprovalRequest, Execution, RepositoryInstallation
 from app.services import fix_pr_service
 from app.services.workflow_failure_service import create_workflow_failure
 from app.tools.github_tool import GitHubToolError
@@ -131,6 +131,95 @@ async def test_create_fix_pr_for_npm_missing_test_script(monkeypatch, db_session
     assert audit.status == "completed"
     assert audit.requested_by == "operator"
     assert json.loads(audit.details)["result"]["status"] == "fix_pr_created"
+
+
+@pytest.mark.asyncio
+async def test_create_fix_pr_uses_installation_token_when_installed(monkeypatch, db_session: AsyncSession):
+    failure = await _failure(db_session, label="npm_missing_test_script")
+    db_session.add(
+        RepositoryInstallation(
+            installation_id=202,
+            repo_full_name="octo-org/demo-app",
+            owner="octo-org",
+            repo="demo-app",
+            default_branch="main",
+            status="active",
+        )
+    )
+    await db_session.flush()
+
+    monkeypatch.setattr(fix_pr_service, "get_installation_access_token", lambda installation_id: "installation-token")
+
+    def _get_default_branch(repo_full_name: str, *, token: str | None = None) -> str:
+        assert repo_full_name == "octo-org/demo-app"
+        assert token == "installation-token"
+        return "main"
+
+    def _get_file_content(repo_full_name: str, path: str, branch: str, *, token: str | None = None):
+        assert token == "installation-token"
+        if path != ".github/workflows/ci.yml":
+            raise GitHubToolError("Unable to read file: repository or resource not found.")
+        return {
+            "path": path,
+            "branch": branch,
+            "content": "name: CI\njobs:\n  test:\n    steps:\n      - run: npm test\n",
+            "sha": "workflow-sha",
+        }
+
+    def _create_branch(
+        repo_full_name: str,
+        base_branch: str,
+        new_branch: str,
+        *,
+        token: str | None = None,
+    ):
+        assert token == "installation-token"
+        return {"branch": new_branch, "sha": "branch-sha"}
+
+    def _create_or_update_file(
+        repo_full_name: str,
+        branch: str,
+        path: str,
+        content: str,
+        commit_message: str,
+        **kwargs,
+    ):
+        assert kwargs["token"] == "installation-token"
+        assert kwargs["overwrite"] is True
+        return {"path": path, "sha": "updated-sha", "action": "updated"}
+
+    def _create_pull_request(
+        repo_full_name: str,
+        head_branch: str,
+        base_branch: str,
+        title: str,
+        body: str,
+        *,
+        token: str | None = None,
+    ):
+        assert token == "installation-token"
+        return {"number": 12, "html_url": "https://github.com/octo-org/demo-app/pull/12"}
+
+    monkeypatch.setattr(fix_pr_service.github_tool, "get_default_branch", _get_default_branch)
+    monkeypatch.setattr(fix_pr_service.github_tool, "get_file_content", _get_file_content)
+    monkeypatch.setattr(fix_pr_service.github_tool, "create_branch", _create_branch)
+    monkeypatch.setattr(fix_pr_service.github_tool, "create_or_update_file", _create_or_update_file)
+    monkeypatch.setattr(fix_pr_service.github_tool, "create_pull_request", _create_pull_request)
+
+    result = await fix_pr_service.create_fix_pr_for_failure(
+        db_session,
+        failure.id,
+        {"username": "operator", "role": "operator"},
+    )
+
+    assert result["status"] == "fix_pr_created"
+    assert result["auth_mode"] == "github_app_installation"
+    assert result["installation_id"] == 202
+
+    audit_result = await db_session.execute(select(Execution).where(Execution.tool_name == "github_create_fix_pr"))
+    audit = audit_result.scalar_one()
+    audit_details = json.loads(audit.details)
+    assert audit_details["result"]["auth_mode"] == "github_app_installation"
 
 
 @pytest.mark.asyncio

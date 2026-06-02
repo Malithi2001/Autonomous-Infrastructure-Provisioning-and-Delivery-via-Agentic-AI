@@ -1,0 +1,72 @@
+{
+  "accuracy": 0.7952,
+  "dataset": {
+    "duplicates_removed": 0,
+    "labels": {
+      "docker_build_failed": 30,
+      "maven_test_failed": 30,
+      "module_not_found": 30,
+      "npm_build_failed": 30,
+      "npm_install_failed": 30,
+      "npm_missing_lockfile": 30,
+      "npm_missing_test_script": 30,
+      "pytest_not_found": 30,
+      "python_missing_dependency": 30,
+      "unknown_failure": 30,
+      "wrong_runtime_version": 30
+    },
+    "path": "/Users/dev/Desktop/fk/Autonomous-Infrastructure-Provisioning-and-Delivery-via-Agentic-AI/backend/app/ml/dataset.csv",
+    "rows": 330
+  },
+  "dataset_size": 330,
+  "generated_at": "2026-06-02T08:58:14.399155+00:00",
+  "labels": [
+    "docker_build_failed",
+    "maven_test_failed",
+    "module_not_found",
+    "npm_build_failed",
+    "npm_install_failed",
+    "npm_missing_lockfile",
+    "npm_missing_test_script",
+    "pytest_not_found",
+    "python_missing_dependency",
+    "unknown_failure",
+    "wrong_runtime_version"
+  ],
+  "macro_f1": 0.776,
+  "macro_precision": 0.7813,
+  "macro_recall": 0.7938,
+  "models": {
+    "linear_svc": {
+      "accuracy": 0.8072,
+      "macro_f1": 0.7937,
+      "macro_precision": 0.7951,
+      "macro_recall": 0.8068,
+      "weighted_f1": 0.7949,
+      "weighted_precision": 0.7967,
+      "weighted_recall": 0.8072
+    },
+    "logistic_regression": {
+      "accuracy": 0.7952,
+      "macro_f1": 0.776,
+      "macro_precision": 0.7813,
+      "macro_recall": 0.7938,
+      "weighted_f1": 0.7786,
+      "weighted_precision": 0.7849,
+      "weighted_recall": 0.7952
+    }
+  },
+  "number_of_labels": 11,
+  "saved_model": "logistic_regression",
+  "split": {
+    "random_state": 42,
+    "test_size": 83,
+    "train_size": 247,
+    "used_stratify": true
+  },
+  "test_size": 83,
+  "train_size": 247,
+  "weighted_f1": 0.7786,
+  "weighted_precision": 0.7849,
+  "weighted_recall": 0.7952
+}

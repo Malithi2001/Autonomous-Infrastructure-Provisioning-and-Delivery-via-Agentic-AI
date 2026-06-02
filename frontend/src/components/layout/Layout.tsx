@@ -1,6 +1,7 @@
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import {
   Bot,
+  BarChart3,
   CheckSquare,
   Clock,
   GitPullRequest,
@@ -59,6 +60,12 @@ const navItems = [
     icon: Clock,
     label: "Audit",
     permission: "executions:read" as const,
+  },
+  {
+    to: "/evaluation",
+    icon: BarChart3,
+    label: "Evaluation",
+    permission: "metrics:read" as const,
   },
   {
     to: "/users",

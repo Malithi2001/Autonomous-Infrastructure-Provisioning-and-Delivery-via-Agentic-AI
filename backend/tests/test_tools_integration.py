@@ -76,6 +76,10 @@ def test_agent_orchestrate_routes_running_containers_to_cli_agent(monkeypatch):
     assert body["success"] is True
     assert "api" in body["result"]
     assert body["metadata"]["tool_called"] == "list_containers"
+    assert body["metadata"]["trace_steps"][0]["actor"] == "User"
+    assert body["metadata"]["trace_steps"][1]["actor"] == "Orchestration Agent"
+    assert body["metadata"]["trace_steps"][2]["actor"] == "CLI Agent"
+    assert body["metadata"]["trace_steps"][3]["actor"] == "Docker Tool"
 
     with TestClient(app) as client:
         audit_response = client.get(
@@ -154,6 +158,8 @@ def test_agent_orchestrate_requires_approval_for_workflow_pr(monkeypatch):
     assert body["metadata"]["approval_id"]
     assert body["metadata"]["proposed_tool_call"] == "github_create_workflow_pr"
     assert body["metadata"]["approval_details"]["repository"] == "octo-org/demo-app"
+    assert body["metadata"]["trace_steps"][2]["actor"] == "GitHub Agent"
+    assert body["metadata"]["trace_steps"][3]["status"] == "pending"
 
     with TestClient(app) as client:
         approvals_response = client.get(

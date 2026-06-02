@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from typing import Any, Optional
+from typing import Any, Awaitable, Callable, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field
@@ -14,7 +14,7 @@ from app.agents.agent_types import AgentResult, AgentTask
 from app.agents.devops_agent import _agent_pool, get_or_create_agent
 from app.agents.orchestration_agent import OrchestrationAgent
 from app.agents.tools_registry import HITLApprovalRequired
-from app.api.routes.approvals import create_approval_request
+from app.api.routes.approvals import create_approval_request, redact_tool_input
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, get_db
 from app.core.security import ACCESS_TOKEN_COOKIE_NAME, decode_token, has_permission, require_permission
@@ -101,6 +101,7 @@ async def orchestrate(
     )
     try:
         orchestrator = OrchestrationAgent()
+        prepared_task = orchestrator.prepare_task(task)
         approval_plan = orchestrator.approval_plan(task)
         if approval_plan:
             approval = await create_approval_request(
@@ -130,8 +131,23 @@ async def orchestrate(
                     "approval_details": approval_plan["details"],
                 },
             )
+            result = orchestrator.add_trace(result, prepared_task, "github")
         else:
-            result = orchestrator.handle(task)
+            github_handle_async = getattr(orchestrator.github_agent, "handle_async", None)
+            is_async_github_route = (
+                orchestrator.route_task(prepared_task) == "github"
+                and github_handle_async is not None
+            )
+            if is_async_github_route:
+                async_handler = cast(Callable[..., Awaitable[AgentResult]], github_handle_async)
+                result = await async_handler(
+                    prepared_task,
+                    db=db,
+                    current_user=current_user,
+                )
+                result = orchestrator.add_trace(result, prepared_task, "github")
+            else:
+                result = orchestrator.handle(task)
         try:
             await audit_service.log_multi_agent_execution(
                 db,
@@ -225,7 +241,7 @@ async def chat(
                         "approval_id": approval.id,
                         "tool_name": approval_exc.tool_name,
                         "risk_level": approval_exc.risk_level,
-                        "tool_input": approval_exc.tool_input,
+                        "tool_input": redact_tool_input(approval_exc.tool_input),
                     },
                     ensure_ascii=False,
                 )
