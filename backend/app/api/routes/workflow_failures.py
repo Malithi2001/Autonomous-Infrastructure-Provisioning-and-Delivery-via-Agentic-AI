@@ -20,7 +20,7 @@ async def list_failures(
     repo_full_name: str | None = None,
     status: str | None = None,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("executions:read")),
+    current_user: dict = Depends(require_permission("workflow_failures:read")),
 ):
     """List recent GitHub Actions failure diagnoses."""
     return await list_workflow_failures(
@@ -35,7 +35,7 @@ async def list_failures(
 async def create_failure_fix_pr(
     failure_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("executions:write")),
+    current_user: dict = Depends(require_permission("workflow_failures:write")),
 ):
     """Create a low-risk GitHub workflow fix pull request for a diagnosis."""
     try:
@@ -49,7 +49,7 @@ async def create_failure_fix_pr(
 async def get_failure(
     failure_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("executions:read")),
+    current_user: dict = Depends(require_permission("workflow_failures:read")),
 ):
     """Fetch one GitHub Actions failure diagnosis by id."""
     record = await get_workflow_failure(db, str(failure_id))

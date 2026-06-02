@@ -57,7 +57,7 @@ async def override_db(db_session: AsyncSession):
     app.dependency_overrides.pop(get_db, None)
 
 
-def _auth_headers(role: str = "viewer") -> dict[str, str]:
+def _auth_headers(role: str = "developer") -> dict[str, str]:
     token = create_access_token(
         {
             "sub": str(uuid.uuid4()),

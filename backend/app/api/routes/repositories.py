@@ -44,7 +44,7 @@ async def _installation_token_for_repo(db: AsyncSession, repo_full_name: str) ->
 @router.get("/installed", response_model=list[RepositoryInstallationOut])
 async def installed_repositories(
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("logs:read")),
+    current_user: dict = Depends(require_permission("repositories:read")),
 ):
     """List repositories installed through the GitHub App."""
     return await list_installed_repositories(db)
@@ -54,7 +54,7 @@ async def installed_repositories(
 async def scan_repository(
     request: RepositoryScanRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("logs:read")),
+    current_user: dict = Depends(require_permission("repositories:read")),
 ):
     """Fetch a GitHub repository tree and analyze its CI/CD stack."""
     try:
@@ -106,7 +106,7 @@ async def scan_repository(
 async def create_repository_workflow_pr(
     request: RepositoryWorkflowPRRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("executions:write")),
+    current_user: dict = Depends(require_permission("repositories:write")),
 ):
     """Create an AI-generated GitHub Actions workflow pull request."""
     actor = current_user.get("username", current_user.get("sub", "unknown"))

@@ -63,7 +63,7 @@ def client():
         yield test_client
 
 
-def _auth_headers(role: str = "viewer") -> dict[str, str]:
+def _auth_headers(role: str = "developer") -> dict[str, str]:
     token = create_access_token(
         {
             "sub": str(uuid.uuid4()),

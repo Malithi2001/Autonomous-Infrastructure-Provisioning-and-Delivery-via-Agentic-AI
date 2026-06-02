@@ -25,7 +25,7 @@ async def list_executions(
     source: str | None = None,
     days: int = 7,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("executions:read")),
+    current_user: dict = Depends(require_permission("audit:read")),
 ):
     """
     List recent agent executions with optional filtering.
@@ -74,7 +74,7 @@ async def list_executions(
 async def get_execution(
     execution_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("executions:read")),
+    current_user: dict = Depends(require_permission("audit:read")),
 ):
     """Get details of a specific execution including AI reasoning steps."""
     record = await db.get(Execution, str(execution_id))

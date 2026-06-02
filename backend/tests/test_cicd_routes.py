@@ -6,6 +6,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.routes import cicd
+from app.core.config import settings
+from app.core.security import create_access_token
+from app.services import audit_service
 
 
 def _build_cicd_app() -> FastAPI:
@@ -17,10 +20,68 @@ def _build_cicd_app() -> FastAPI:
 app = _build_cicd_app()
 
 
-def test_analyze_files_recommends_node_react_workflow_without_auth():
+def _auth_headers(role: str = "developer") -> dict[str, str]:
+    token = create_access_token(
+        {
+            "sub": f"cicd-test-{role}",
+            "username": "cicd-test-user",
+            "role": role,
+        }
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_analyze_files_requires_auth():
+    settings.DESKTOP_MODE = False
+    settings.DISABLE_AUTH = False
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/cicd/analyze-files",
+            json={"files": ["package.json"]},
+        )
+
+    assert response.status_code in (401, 403)
+
+
+def test_desktop_mode_bypasses_auth(monkeypatch):
+    monkeypatch.setattr(settings, "DESKTOP_MODE", True)
+    monkeypatch.setattr(settings, "DISABLE_AUTH", False)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/cicd/analyze-files",
+            json={"files": ["package.json"]},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["language"] == "javascript"
+
+
+def test_desktop_mode_audit_actor_is_desktop_user(monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def fake_log_repo_analysis(*args, **kwargs):
+        captured["actor"] = kwargs.get("actor")
+
+    monkeypatch.setattr(settings, "DESKTOP_MODE", True)
+    monkeypatch.setattr(settings, "DISABLE_AUTH", False)
+    monkeypatch.setattr(audit_service, "log_repo_analysis", fake_log_repo_analysis)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/cicd/analyze-files",
+            json={"files": ["package.json"]},
+        )
+
+    assert response.status_code == 200
+    assert captured["actor"] == "desktop_user"
+
+
+def test_analyze_files_recommends_node_react_workflow_with_developer_auth():
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/cicd/analyze-files",
+            headers=_auth_headers(),
             json={"files": ["package.json", "src/App.jsx", "vite.config.js", "Dockerfile"]},
         )
 
@@ -41,10 +102,11 @@ def test_analyze_files_recommends_node_react_workflow_without_auth():
     }
 
 
-def test_generate_workflow_returns_stack_path_and_valid_yaml_without_auth():
+def test_generate_workflow_returns_stack_path_and_valid_yaml_with_developer_auth():
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/cicd/generate-workflow",
+            headers=_auth_headers(),
             json={"files": ["requirements.txt\nfastapi==0.111.0", "tests/test_app.py"]},
         )
 
@@ -66,6 +128,7 @@ def test_generate_workflow_returns_node_workflow_without_github_calls():
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/cicd/generate-workflow",
+            headers=_auth_headers(),
             json={"files": ["package.json", "src/App.jsx"]},
         )
 
@@ -83,6 +146,7 @@ def test_generate_workflow_returns_java_workflow_without_github_calls():
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/cicd/generate-workflow",
+            headers=_auth_headers(),
             json={"files": ["pom.xml", "src/main/java/com/example/App.java"]},
         )
 
@@ -99,6 +163,7 @@ def test_generate_workflow_returns_docker_workflow_without_github_calls():
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/cicd/generate-workflow",
+            headers=_auth_headers(),
             json={"files": ["Dockerfile"]},
         )
 

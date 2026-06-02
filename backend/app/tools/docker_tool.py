@@ -10,20 +10,29 @@ from docker.errors import DockerException, NotFound, APIError
 from app.core.logging import logger
 
 _client = None
-_client_checked = False
+_unavailable_logged = False
 
 
 def _check_client():
-    global _client, _client_checked
-    if not _client_checked:
-        _client_checked = True
-        try:
-            _client = docker.from_env(timeout=3)
-        except DockerException:
-            _client = None
-            logger.warning("docker.client.unavailable", detail="Docker socket not accessible.")
+    global _client, _unavailable_logged
     if _client is None:
-        raise RuntimeError("Docker client is not available. Ensure Docker is running and the socket is mounted.")
+        try:
+            candidate = docker.from_env(timeout=3)
+            candidate.ping()
+            _client = candidate
+            _unavailable_logged = False
+        except DockerException as exc:
+            _client = None
+            if not _unavailable_logged:
+                logger.warning(
+                    "docker.client.unavailable",
+                    detail="Docker socket not accessible.",
+                    error=str(exc),
+                )
+                _unavailable_logged = True
+            raise RuntimeError(
+                "Docker client is not available. Ensure Docker is running and the socket is mounted."
+            ) from exc
     return _client
 
 
