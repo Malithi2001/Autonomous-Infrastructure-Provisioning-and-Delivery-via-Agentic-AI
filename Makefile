@@ -13,10 +13,19 @@ BACKEND_PY := $(BACKEND_VENV)/bin/python
 PIP := $(BACKEND_PY) -m pip
 NPM := npm
 COMPOSE := $(shell if docker compose version >/dev/null 2>&1; then echo "docker compose"; elif command -v docker-compose >/dev/null 2>&1; then echo "docker-compose"; else echo ""; fi)
+SUBMISSION_DIR := dist-submission
+SUBMISSION_ZIP := $(SUBMISSION_DIR)/Autonomous-Infrastructure-Provisioning-and-Delivery-via-Agentic-AI-clean.zip
+SUBMISSION_INCLUDE := \
+	.env.example \
+	README.md AGENTS.md Makefile docker-compose.yml scripts \
+	backend/.env.example backend/app backend/tests backend/requirements.txt \
+	frontend/.env.example frontend/src frontend/package.json frontend/package-lock.json \
+	docs
 
 .PHONY: help setup backend-install frontend-install dev dev-build backend frontend train-model \
 	test test-backend test-frontend lint lint-backend lint-frontend format format-backend format-frontend \
-	build docker-build clean docker-down docker-logs reset
+	build docker-build clean docker-down docker-logs reset github-e2e-checklist \
+	prepare-submission prepare-submission-dry-run
 
 ## Show all available commands.
 help:
@@ -33,6 +42,8 @@ help:
 	@echo "  make backend            Start FastAPI locally on http://localhost:8000"
 	@echo "  make frontend           Start Vite locally on http://localhost:5173"
 	@echo "  make train-model        Train the CI/CD failure classification model"
+	@echo "  make github-e2e-checklist"
+	@echo "                          Print safe real-GitHub demo verification checklist"
 	@echo ""
 	@echo "Quality:"
 	@echo "  make test               Run backend and frontend tests where configured"
@@ -50,6 +61,9 @@ help:
 	@echo "Cleanup:"
 	@echo "  make clean              Remove caches, builds, and local dependency installs"
 	@echo "  make reset              Stop containers and remove caches/builds/dependencies"
+	@echo "  make prepare-submission-dry-run"
+	@echo "                          Preview files included in the clean submission ZIP"
+	@echo "  make prepare-submission Create dist-submission clean ZIP without secrets/caches"
 
 ## Install backend and frontend dependencies if their manifests exist.
 setup: backend-install frontend-install
@@ -140,6 +154,80 @@ build:
 docker-build:
 	@if [ -z "$(COMPOSE)" ]; then echo "Docker Compose is not available."; exit 1; fi
 	$(COMPOSE) build
+
+## Print a safe real-GitHub end-to-end demo checklist.
+github-e2e-checklist:
+	$(PYTHON) scripts/github_e2e_checklist.py
+
+## Preview files that will be archived for final submission.
+prepare-submission-dry-run:
+	@echo "Submission dry-run: files that would be archived"
+	@set -eu; \
+	for path in $(SUBMISSION_INCLUDE); do \
+		if [ -e "$$path" ]; then \
+			find "$$path" \
+				\( -path "*/.git" -o -path "*/__MACOSX" -o -path "*/__pycache__" -o -path "*/.pytest_cache" -o -path "*/.mypy_cache" -o -path "*/.ruff_cache" -o -path "*/htmlcov" -o -path "*/node_modules" -o -path "*/venv" -o -path "*/.venv" -o -path "frontend/dist" -o -path "frontend/build" \) -prune \
+				-o -type f \
+				! -name ".env" \
+				! -name "*.db" \
+				! -name "*.sqlite" \
+				! -name "*.sqlite3" \
+				! -name "*.pyc" \
+				! -name ".coverage*" \
+				! -name "*.log" \
+				! -name "*.tmp" \
+				! -name "*.temp" \
+				! -name "*~" \
+				! -name ".DS_Store" \
+				-print; \
+		fi; \
+	done | sort
+
+## Create clean final submission ZIP without secrets, temp files, caches, databases, or Git metadata.
+prepare-submission:
+	@command -v zip >/dev/null 2>&1 || { echo "zip is not installed."; exit 1; }
+	@rm -rf "$(SUBMISSION_DIR)"
+	@mkdir -p "$(SUBMISSION_DIR)"
+	@set -eu; \
+	existing_paths=""; \
+	for path in $(SUBMISSION_INCLUDE); do \
+		if [ -e "$$path" ]; then existing_paths="$$existing_paths $$path"; fi; \
+	done; \
+	if [ -z "$$existing_paths" ]; then echo "No submission files found."; exit 1; fi; \
+	zip -qr "$(SUBMISSION_ZIP)" $$existing_paths \
+		-x ".git/*" \
+		-x "*/.git/*" \
+		-x "__MACOSX/*" \
+		-x "*/__MACOSX/*" \
+		-x ".env" \
+		-x "*/.env" \
+		-x "*.db" \
+		-x "*.sqlite" \
+		-x "*.sqlite3" \
+		-x "*/__pycache__/*" \
+		-x "*.pyc" \
+		-x "*/.pytest_cache/*" \
+		-x "*/.mypy_cache/*" \
+		-x "*/.ruff_cache/*" \
+		-x ".coverage*" \
+		-x "*/.coverage*" \
+		-x "htmlcov/*" \
+		-x "*/htmlcov/*" \
+		-x "node_modules/*" \
+		-x "*/node_modules/*" \
+		-x "frontend/dist/*" \
+		-x "frontend/build/*" \
+		-x "venv/*" \
+		-x "*/venv/*" \
+		-x ".venv/*" \
+		-x "*/.venv/*" \
+		-x "*.log" \
+		-x "*.tmp" \
+		-x "*.temp" \
+		-x "*~" \
+		-x ".DS_Store" \
+		-x "*/.DS_Store"; \
+	echo "Created $(SUBMISSION_ZIP)"
 
 ## Remove generated caches, build output, and local dependency installs. Keeps source, docs, env files, datasets, models, and DB volumes.
 clean:

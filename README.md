@@ -138,6 +138,23 @@ frontend/src/
   types/         Shared TypeScript types
 ```
 
+## Developer Commands
+
+Common project commands:
+
+| Command | Purpose |
+| --- | --- |
+| `make setup` | Install backend and frontend dependencies. |
+| `make test-backend` | Run the backend pytest suite. |
+| `make lint` | Run configured backend and frontend lint/type checks. |
+| `make build` | Build the frontend production bundle. |
+| `make train-model` | Retrain the CI/CD failure classification model and reports. |
+| `make clean` | Remove generated caches, builds, and local dependency installs. |
+| `make prepare-submission-dry-run` | Preview files that will be included in the clean final submission ZIP. |
+| `make prepare-submission` | Create `dist-submission/Autonomous-Infrastructure-Provisioning-and-Delivery-via-Agentic-AI-clean.zip`. |
+
+The submission ZIP excludes secrets, `.env` files, local databases, Git metadata, dependency folders, caches, logs, coverage output, and frontend build output. It keeps `.env.example` files, source code, tests, docs, ML datasets, trained model artifacts, and generated model reports.
+
 ## Safety Principles
 
 - The system never pushes directly to `main` or `master`.
