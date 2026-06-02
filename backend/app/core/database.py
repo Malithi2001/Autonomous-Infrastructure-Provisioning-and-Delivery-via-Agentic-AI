@@ -60,6 +60,7 @@ engine = create_async_engine(
     async_url,
     echo=settings.DEBUG,
     future=True,
+    hide_parameters=True,
     pool_pre_ping=True,
     connect_args=connect_args,
 )

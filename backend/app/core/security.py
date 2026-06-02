@@ -17,6 +17,10 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 ACCESS_TOKEN_COOKIE_NAME = settings.COOKIE_NAME or "devops_access_token"
 
+DESKTOP_USER_ID = "desktop_user"
+DESKTOP_USER_EMAIL = "desktop@local.app"
+DESKTOP_USER_USERNAME = "desktop_user"
+
 
 class UserRole(str, Enum):
     VIEWER = "viewer"
@@ -43,7 +47,7 @@ ROLE_DESCRIPTIONS: dict[UserRole, str] = {
         "Builder workflow. Can chat with the agent, inspect systems, and use lower-risk development/staging tools."
     ),
     UserRole.VIEWER: (
-        "Read-only observer. Can ask the agent for insight and view execution history without changing infrastructure."
+        "Read-only observer. Can ask the agent for safe insight without operational or approval access."
     ),
 }
 
@@ -54,20 +58,29 @@ PUBLIC_SIGNUP_ROLES: set[UserRole] = {UserRole.DEVELOPER, UserRole.VIEWER}
 ROLE_PERMISSIONS: dict[UserRole, list[str]] = {
     UserRole.VIEWER: [
         "agent:chat",
-        "approvals:read",
-        "logs:read",
-        "metrics:read",
-        "executions:read",
     ],
     UserRole.DEVELOPER: [
         "agent:chat",
+        "agents:orchestrate",
+        "cicd:read",
+        "cicd:generate",
+        "failures:predict",
+        "repositories:read",
+        "workflow_failures:read",
         "logs:read",
-        "metrics:read",
-        "executions:read",
         "deployments:staging",
     ],
     UserRole.OPERATOR: [
         "agent:chat",
+        "agents:orchestrate",
+        "cicd:read",
+        "cicd:generate",
+        "failures:predict",
+        "repositories:read",
+        "repositories:write",
+        "workflow_failures:read",
+        "workflow_failures:write",
+        "audit:read",
         "logs:read",
         "logs:write",
         "metrics:read",
@@ -115,6 +128,23 @@ def role_profile(role: str | UserRole | None) -> dict:
         "description": ROLE_DESCRIPTIONS[role_value],
         "permissions": get_role_permissions(role_value),
         "can_self_signup": role_value in PUBLIC_SIGNUP_ROLES,
+    }
+
+
+def auth_bypass_enabled() -> bool:
+    """Return true when local desktop mode disables JWT and RBAC checks."""
+    return settings.auth_disabled
+
+
+def desktop_user_payload() -> dict:
+    """Synthetic admin user used only for local desktop mode."""
+    return {
+        "sub": DESKTOP_USER_ID,
+        "id": DESKTOP_USER_ID,
+        "username": DESKTOP_USER_USERNAME,
+        "email": DESKTOP_USER_EMAIL,
+        "role": UserRole.ADMIN.value,
+        "is_desktop_user": True,
     }
 
 
@@ -186,6 +216,8 @@ def require_permission(permission: str):
     """FastAPI dependency: require a specific permission from bearer token or httpOnly cookie."""
 
     async def _check(request: Request, token: str | None = Depends(oauth2_scheme)):
+        if auth_bypass_enabled():
+            return desktop_user_payload()
         payload = _decode_access_payload(request, token)
         role = coerce_role(payload.get("role"))
         if not has_permission(role, permission):
@@ -202,6 +234,8 @@ def require_role(*roles: UserRole):
     allowed = {role.value for role in roles}
 
     async def _check(request: Request, token: str | None = Depends(oauth2_scheme)):
+        if auth_bypass_enabled():
+            return desktop_user_payload()
         payload = _decode_access_payload(request, token)
         if payload.get("role") not in allowed and payload.get("role") != UserRole.ADMIN.value:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role.")
@@ -212,4 +246,6 @@ def require_role(*roles: UserRole):
 
 async def get_current_user(request: Request, token: str | None = Depends(oauth2_scheme)) -> dict:
     """Return decoded JWT payload from Authorization bearer or secure httpOnly cookie."""
+    if auth_bypass_enabled():
+        return desktop_user_payload()
     return _decode_access_payload(request, token)

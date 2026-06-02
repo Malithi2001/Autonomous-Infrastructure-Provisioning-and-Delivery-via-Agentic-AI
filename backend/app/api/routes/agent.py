@@ -17,7 +17,14 @@ from app.agents.tools_registry import HITLApprovalRequired
 from app.api.routes.approvals import create_approval_request, redact_tool_input
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, get_db
-from app.core.security import ACCESS_TOKEN_COOKIE_NAME, decode_token, has_permission, require_permission
+from app.core.security import (
+    ACCESS_TOKEN_COOKIE_NAME,
+    auth_bypass_enabled,
+    decode_token,
+    desktop_user_payload,
+    has_permission,
+    require_permission,
+)
 from app.schemas.schemas import ChatRequest, ChatResponse, IntermediateStep
 from app.services import audit_service
 from app.services.execution_service import complete_execution, create_execution
@@ -89,7 +96,7 @@ def _serialize_intermediate_steps(steps: list) -> list[IntermediateStep]:
 async def orchestrate(
     request: OrchestrationRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("agent:chat")),
+    current_user: dict = Depends(require_permission("agents:orchestrate")),
 ):
     """Route a request through the deterministic multi-agent orchestration layer."""
     actor = current_user.get("username") or current_user.get("sub") or "unknown"
@@ -305,23 +312,27 @@ async def agent_ws(
     bearer_token = auth_header.split(" ", 1)[1].strip() if auth_header.lower().startswith("bearer ") else None
     websocket_token = token or bearer_token or websocket.cookies.get(ACCESS_TOKEN_COOKIE_NAME)
 
-    if not websocket_token:
+    if auth_bypass_enabled():
+        payload = desktop_user_payload()
+        user_role = payload["role"]
+        user_id = payload["sub"]
+    elif not websocket_token:
         await websocket.close(code=4001, reason="Missing auth token")
         return
-
-    try:
-        payload = decode_token(websocket_token)
-        if payload.get("type") != "access":
-            await websocket.close(code=4003, reason="Invalid token type")
+    else:
+        try:
+            payload = decode_token(websocket_token)
+            if payload.get("type") != "access":
+                await websocket.close(code=4003, reason="Invalid token type")
+                return
+            user_role = payload.get("role", "developer")
+            if not has_permission(user_role, "agent:chat"):
+                await websocket.close(code=4003, reason="Agent chat permission required")
+                return
+            user_id = payload.get("sub", "anonymous")
+        except Exception:
+            await websocket.close(code=4003, reason="Invalid or expired token")
             return
-        user_role = payload.get("role", "developer")
-        if not has_permission(user_role, "agent:chat"):
-            await websocket.close(code=4003, reason="Agent chat permission required")
-            return
-        user_id = payload.get("sub", "anonymous")
-    except Exception:
-        await websocket.close(code=4003, reason="Invalid or expired token")
-        return
 
     user_connections = _ws_connections.setdefault(user_id, set())
     if len(user_connections) >= _MAX_CONNECTIONS_PER_USER:

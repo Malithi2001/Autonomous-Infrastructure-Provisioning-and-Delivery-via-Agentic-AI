@@ -82,7 +82,7 @@ async def github_webhook(
 async def recent_webhook_events(
     limit: int = 25,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("executions:read")),
+    current_user: dict = Depends(require_permission("audit:read")),
 ):
     """Return recent webhook/audit records for GitHub webhook debugging."""
     stmt = (

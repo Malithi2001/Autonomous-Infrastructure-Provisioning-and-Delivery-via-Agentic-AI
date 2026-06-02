@@ -83,7 +83,7 @@ def _failed_workflow_payload() -> dict:
     }
 
 
-def _auth_headers(role: str = "viewer") -> dict[str, str]:
+def _auth_headers(role: str = "operator") -> dict[str, str]:
     token = create_access_token(
         {
             "sub": str(uuid.uuid4()),

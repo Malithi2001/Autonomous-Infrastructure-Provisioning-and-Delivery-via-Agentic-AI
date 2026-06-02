@@ -37,7 +37,7 @@ class RefreshRequest(BaseModel):
 
 
 class UserOut(BaseModel):
-    id: uuid.UUID
+    id: str
     email: EmailStr
     username: str
     role: UserRole

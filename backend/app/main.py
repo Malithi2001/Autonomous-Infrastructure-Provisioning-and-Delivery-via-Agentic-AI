@@ -58,6 +58,7 @@ app.add_middleware(
 # ── Routers ───────────────────────────────────────────────────────────────────
 
 app.include_router(health.router,      tags=["Health"])
+app.include_router(health.router,      prefix="/api/v1", tags=["Health"])
 app.include_router(auth.router,        prefix="/api/v1/auth",       tags=["Authentication"])
 app.include_router(agent.router,       prefix="/api/v1/agent",      tags=["Agent"])
 # Legacy API and WebSocket URLs kept for existing clients/tests.

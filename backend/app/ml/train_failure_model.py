@@ -31,6 +31,7 @@ from sklearn.svm import LinearSVC
 
 
 ML_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = ML_DIR.parents[2]
 DATASET_PATH = ML_DIR / "dataset.csv"
 MODEL_PATH = ML_DIR / "failure_model.joblib"
 FIX_MAPPING_PATH = ML_DIR / "fix_mapping.joblib"
@@ -342,7 +343,7 @@ def train_model(df: pd.DataFrame) -> tuple[Pipeline, dict[str, Any]]:
         "weighted_f1": model_metrics["logistic_regression"]["weighted_f1"],
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "dataset": {
-            "path": str(DATASET_PATH),
+            "path": DATASET_PATH.relative_to(PROJECT_ROOT).as_posix(),
             "rows": int(len(df)),
             "labels": dict(sorted(Counter(df["label"]).items())),
             "duplicates_removed": int(df.attrs.get("duplicates_removed", 0)),

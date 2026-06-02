@@ -15,6 +15,7 @@ from app.core.security import (
     ACCESS_TOKEN_COOKIE_NAME,
     PUBLIC_SIGNUP_ROLES,
     UserRole,
+    auth_bypass_enabled,
     coerce_role,
     create_access_token,
     create_refresh_token,
@@ -364,6 +365,15 @@ async def refresh_token(payload: RefreshRequest, response: Response, db: AsyncSe
 
 @router.get("/me", response_model=UserOut)
 async def get_current_user_info(current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    if auth_bypass_enabled() or current_user.get("is_desktop_user"):
+        return {
+            "id": "desktop_user",
+            "email": "desktop@local.app",
+            "username": "desktop_user",
+            "role": UserRole.ADMIN.value,
+            "is_active": True,
+            "created_at": datetime.now(timezone.utc),
+        }
     user = await db.get(User, current_user["sub"])
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")

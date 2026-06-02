@@ -97,12 +97,12 @@ class _BrokenModel:
         raise ValueError("internal model stack detail")
 
 
-def _auth_headers() -> dict[str, str]:
+def _auth_headers(role: str = "developer") -> dict[str, str]:
     token = create_access_token(
         {
             "sub": str(uuid.uuid4()),
             "username": "model-test-user",
-            "role": "viewer",
+            "role": role,
         }
     )
     return {"Authorization": f"Bearer {token}"}
@@ -264,7 +264,31 @@ def test_predict_failure_endpoint_does_not_expose_stack_traces(monkeypatch):
     assert response.json() == {"detail": "Failure prediction failed. Please try again."}
 
 
-def test_seeded_viewer_can_login_and_predict(monkeypatch):
+def test_seeded_developer_can_login_and_predict(monkeypatch):
+    monkeypatch.setattr(service, "_model", _FakeModel())
+    monkeypatch.setattr(
+        service,
+        "_fix_mapping",
+        {"npm_missing_test_script": "Add a test script in package.json."},
+    )
+
+    with TestClient(app) as client:
+        login_response = client.post(
+            "/api/v1/auth/login",
+            json={"email": "devops.engineer@example.com", "password": "developer123"},
+        )
+        prediction_response = client.post(
+            "/api/v1/model/predict-failure",
+            json={"log_text": "npm ERR! Missing script: test"},
+        )
+
+    assert login_response.status_code == 200
+    assert login_response.json()["user"]["email"] == "devops.engineer@example.com"
+    assert prediction_response.status_code == 200
+    assert prediction_response.json()["label"] == "npm_missing_test_script"
+
+
+def test_seeded_viewer_cannot_predict(monkeypatch):
     monkeypatch.setattr(service, "_model", _FakeModel())
     monkeypatch.setattr(
         service,
@@ -283,6 +307,4 @@ def test_seeded_viewer_can_login_and_predict(monkeypatch):
         )
 
     assert login_response.status_code == 200
-    assert login_response.json()["user"]["email"] == "viewer@company.example.com"
-    assert prediction_response.status_code == 200
-    assert prediction_response.json()["label"] == "npm_missing_test_script"
+    assert prediction_response.status_code == 403

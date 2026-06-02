@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.logging import logger
+from app.core.security import require_permission
 from app.schemas.schemas import CICDAnalyzeFilesRequest, CICDStackResponse, CICDWorkflowResponse
 from app.services import audit_service
 from app.services.repo_analyzer import detect_stack
@@ -18,8 +19,10 @@ router = APIRouter()
 async def analyze_files(
     request: CICDAnalyzeFilesRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_permission("cicd:read")),
 ):
     """Analyze a repository file list and recommend a CI workflow type."""
+    actor = current_user.get("username") or current_user.get("sub") or "unknown"
     stack = detect_stack(request.files)
     try:
         await audit_service.log_repo_analysis(
@@ -27,7 +30,7 @@ async def analyze_files(
             repo_full_name="uploaded-file-list",
             files_analyzed=len(request.files),
             detected_stack=stack,
-            actor="anonymous",
+            actor=actor,
             source="api",
         )
     except audit_service.AuditError as exc:
@@ -40,8 +43,10 @@ async def analyze_files(
 async def generate_ci_workflow(
     request: CICDAnalyzeFilesRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_permission("cicd:generate")),
 ):
     """Analyze a repository file list and generate GitHub Actions workflow YAML."""
+    actor = current_user.get("username") or current_user.get("sub") or "unknown"
     stack = detect_stack(request.files)
     workflow_yaml = generate_workflow(stack)
     try:
@@ -50,7 +55,7 @@ async def generate_ci_workflow(
             repo_full_name="uploaded-file-list",
             detected_stack=stack,
             workflow_template_name=stack.get("recommended_workflow"),
-            actor="anonymous",
+            actor=actor,
             source="api",
         )
     except audit_service.AuditError as exc:

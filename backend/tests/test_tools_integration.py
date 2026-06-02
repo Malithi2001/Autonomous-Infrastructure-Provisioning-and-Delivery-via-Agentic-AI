@@ -10,7 +10,7 @@ from app.core.security import create_access_token
 from app.main import app
 
 
-def _auth_headers(role: str = "developer", username: str = "integration-user") -> dict[str, str]:
+def _auth_headers(role: str = "operator", username: str = "integration-user") -> dict[str, str]:
     token = create_access_token(
         {
             "sub": f"{username}-{role}",

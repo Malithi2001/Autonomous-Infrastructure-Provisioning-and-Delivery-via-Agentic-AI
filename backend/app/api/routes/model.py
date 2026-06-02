@@ -21,7 +21,7 @@ router = APIRouter()
 @router.post("/predict-failure", response_model=FailurePredictionResponse)
 async def predict_failure_endpoint(
     request: FailurePredictionRequest,
-    current_user: dict = Depends(require_permission("logs:read")),
+    current_user: dict = Depends(require_permission("failures:predict")),
     db: AsyncSession = Depends(get_db),
 ):
     """Classify CI/CD failure logs and return the most likely root cause."""

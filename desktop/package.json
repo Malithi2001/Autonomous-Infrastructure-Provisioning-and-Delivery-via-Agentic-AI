@@ -1,0 +1,72 @@
+{
+  "name": "smart-devops-assistant-desktop",
+  "version": "1.0.0",
+  "description": "Windows desktop shell for Smart DevOps Assistant",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "setup:win": "powershell -ExecutionPolicy Bypass -File ./setup-windows.ps1",
+    "build:win": "electron-builder --win nsis",
+    "build:mac": "electron-builder --mac dmg"
+  },
+  "dependencies": {
+    "electron-is-dev": "^3.0.1"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "local.smart-devops-assistant.desktop",
+    "productName": "Smart DevOps Assistant",
+    "files": [
+      "main.js",
+      "preload.js"
+    ],
+    "extraResources": [
+      {
+        "from": "../frontend/dist",
+        "to": "frontend/dist",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "extraResources": [
+        {
+          "from": "../backend/dist/smart-devops-backend.exe",
+          "to": "backend/smart-devops-backend.exe",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ]
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.developer-tools",
+      "extraResources": [
+        {
+          "from": "../backend/dist/smart-devops-backend",
+          "to": "backend/smart-devops-backend",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Smart DevOps Assistant"
+    }
+  }
+}

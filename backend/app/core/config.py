@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
     ENVIRONMENT: str = "development"
+    DESKTOP_MODE: bool = False
+    DISABLE_AUTH: bool = False
 
     # Server
     HOST: str = "0.0.0.0"
@@ -37,6 +39,8 @@ class Settings(BaseSettings):
             "http://127.0.0.1:5174",
             "http://localhost:3000",
             "http://127.0.0.1:3000",
+            "capacitor://localhost",
+            "http://localhost",
         ]
     )
 
@@ -98,6 +102,11 @@ class Settings(BaseSettings):
     DEFAULT_ADMIN_EMAIL: str = "admin@example.com"
     DEFAULT_ADMIN_USERNAME: str = "admin"
     DEFAULT_ADMIN_PASSWORD: str = "admin123"
+
+    @property
+    def auth_disabled(self) -> bool:
+        """Whether local desktop mode should bypass JWT and RBAC checks."""
+        return bool(self.DESKTOP_MODE or self.DISABLE_AUTH)
 
     @property
     def allowed_origins(self) -> list[str]:
