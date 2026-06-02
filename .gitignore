@@ -76,10 +76,12 @@ logs/
 *.pid
 
 # ── ML Generated Reports ─────────────────────────────────────────────────────
-# Keep datasets and demo model artifacts tracked; ignore generated reports.
-backend/app/ml/reports/*.png
-backend/app/ml/reports/*.txt
-backend/app/ml/reports/*.json
+# Keep final evaluation reports tracked; ignore any extra generated artifacts.
+backend/app/ml/reports/*
+!backend/app/ml/reports/metrics.json
+!backend/app/ml/reports/classification_report.txt
+!backend/app/ml/reports/confusion_matrix.png
+!backend/app/ml/reports/model_summary.md
 
 # ── Database ──────────────────────────────────────────────────────────────────
 *.sqlite3

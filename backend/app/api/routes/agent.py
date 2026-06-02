@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from typing import Any, Optional
+from typing import Any, Awaitable, Callable, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field
@@ -131,7 +131,21 @@ async def orchestrate(
                 },
             )
         else:
-            result = orchestrator.handle(task)
+            prepared_task = orchestrator.prepare_task(task)
+            github_handle_async = getattr(orchestrator.github_agent, "handle_async", None)
+            is_async_github_route = (
+                orchestrator.route_task(prepared_task) == "github"
+                and github_handle_async is not None
+            )
+            if is_async_github_route:
+                async_handler = cast(Callable[..., Awaitable[AgentResult]], github_handle_async)
+                result = await async_handler(
+                    prepared_task,
+                    db=db,
+                    current_user=current_user,
+                )
+            else:
+                result = orchestrator.handle(task)
         try:
             await audit_service.log_multi_agent_execution(
                 db,

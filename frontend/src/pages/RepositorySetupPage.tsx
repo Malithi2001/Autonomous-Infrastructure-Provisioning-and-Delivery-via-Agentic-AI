@@ -209,22 +209,24 @@ export default function RepositorySetupPage() {
         overwriteWorkflow,
       );
       setPrResult(result);
-      setScanResult(
-        (current) =>
-          current || {
-            repo_full_name: result.repo_full_name,
-            files: [],
-            stack: result.detected_stack,
-            readiness: {
-              score: 0,
-              grade: "N/A",
-              summary: "Scan the repository to view CI/CD readiness.",
-              strengths: [],
-              findings: [],
-              recommended_next_actions: [],
+      if (result.detected_stack) {
+        setScanResult(
+          (current) =>
+            current || {
+              repo_full_name: result.repo_full_name,
+              files: [],
+              stack: result.detected_stack!,
+              readiness: {
+                score: 0,
+                grade: "N/A",
+                summary: "Scan the repository to view CI/CD readiness.",
+                strengths: [],
+                findings: [],
+                recommended_next_actions: [],
+              },
             },
-          },
-      );
+        );
+      }
     } catch (err: any) {
       setError(
         err.response?.data?.detail ||
@@ -342,28 +344,47 @@ export default function RepositorySetupPage() {
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <p className="text-xs uppercase tracking-[0.16em] text-ink-subtle">
-                    Pull Request Created
+                    {prResult.approval_required ||
+                    prResult.status === "approval_required"
+                      ? "Approval Required"
+                      : "Pull Request Created"}
                   </p>
                   <h2 className="mt-2 text-base font-semibold text-ink">
                     {prResult.repo_full_name}
                   </h2>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <span className="badge-success">
-                      {prResult.workflow_path}
-                    </span>
-                    <span className="badge-info inline-flex items-center gap-1">
-                      <GitBranch size={12} /> {prResult.branch}
-                    </span>
+                    {prResult.workflow_path && (
+                      <span className="badge-success">
+                        {prResult.workflow_path}
+                      </span>
+                    )}
+                    {prResult.branch && (
+                      <span className="badge-info inline-flex items-center gap-1">
+                        <GitBranch size={12} /> {prResult.branch}
+                      </span>
+                    )}
+                    {prResult.approval_id && (
+                      <span className="badge-info inline-flex items-center gap-1">
+                        <ShieldCheck size={12} /> {prResult.approval_id}
+                      </span>
+                    )}
                   </div>
+                  {prResult.message && (
+                    <p className="mt-3 text-sm text-ink-subtle">
+                      {prResult.message}
+                    </p>
+                  )}
                 </div>
-                <a
-                  href={prResult.pull_request_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn-secondary inline-flex items-center gap-2"
-                >
-                  Open PR <ExternalLink size={15} />
-                </a>
+                {prResult.pull_request_url && (
+                  <a
+                    href={prResult.pull_request_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn-secondary inline-flex items-center gap-2"
+                  >
+                    Open PR <ExternalLink size={15} />
+                  </a>
+                )}
               </div>
             </section>
           )}

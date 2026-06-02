@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.api.routes import repositories
 from app.core.database import Base, get_db
 from app.core.security import create_access_token
-from app.models.models import Execution, RepositoryInstallation
+from app.models.models import ApprovalRequest, Execution, RepositoryInstallation
 from app.tools import github_tool
 from app.tools.github_tool import GitHubToolError
 
@@ -296,6 +296,8 @@ def test_create_workflow_pr_requires_write_permission(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_create_workflow_pr_returns_pr_details_and_audits(monkeypatch, db_session: AsyncSession):
+    monkeypatch.setattr(repositories.settings, "ENABLE_HITL", False)
+
     def _fake_create_workflow_pr(
         repo_full_name: str,
         *,
@@ -362,7 +364,51 @@ async def test_create_workflow_pr_returns_pr_details_and_audits(monkeypatch, db_
 
 
 @pytest.mark.asyncio
+async def test_create_workflow_pr_creates_approval_when_hitl_enabled(monkeypatch, db_session: AsyncSession):
+    monkeypatch.setattr(repositories.settings, "ENABLE_HITL", True)
+
+    def _unexpected_create_workflow_pr(*args, **kwargs) -> dict:
+        raise AssertionError("create_workflow_pr should wait for approval")
+
+    monkeypatch.setattr(repositories, "create_workflow_pr", _unexpected_create_workflow_pr)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/repositories/create-workflow-pr",
+            headers=_auth_headers("operator"),
+            json={
+                "repo_full_name": "octo-org/demo-app",
+                "overwrite_existing_workflow": True,
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["repo_full_name"] == "octo-org/demo-app"
+    assert body["status"] == "approval_required"
+    assert body["approval_required"] is True
+    assert body["approval_id"]
+
+    approval_result = await db_session.execute(
+        select(ApprovalRequest).where(ApprovalRequest.tool_name == "github_create_workflow_pr")
+    )
+    approval = approval_result.scalar_one()
+    assert approval.status == "pending"
+    assert approval.requested_by == "repo-scan-test-user"
+    assert '"overwrite_existing_workflow": true' in (approval.tool_input or "")
+
+    execution_result = await db_session.execute(
+        select(Execution).where(Execution.tool_name == "github_create_workflow_pr")
+    )
+    execution = execution_result.scalar_one()
+    assert execution.status == "pending"
+    assert execution.approval_id == approval.id
+
+
+@pytest.mark.asyncio
 async def test_create_workflow_pr_uses_installation_token_when_installed(monkeypatch, db_session: AsyncSession):
+    monkeypatch.setattr(repositories.settings, "ENABLE_HITL", False)
+
     db_session.add(
         RepositoryInstallation(
             installation_id=99,
@@ -415,6 +461,8 @@ async def test_create_workflow_pr_uses_installation_token_when_installed(monkeyp
 
 @pytest.mark.asyncio
 async def test_create_workflow_pr_returns_clear_github_error_and_audits(monkeypatch, db_session: AsyncSession):
+    monkeypatch.setattr(repositories.settings, "ENABLE_HITL", False)
+
     def _fake_create_workflow_pr(
         repo_full_name: str,
         *,

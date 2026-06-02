@@ -92,6 +92,20 @@ async def _handle_installation_event(payload: dict[str, Any], db: AsyncSession) 
         except GitHubAppError as exc:
             logger.warning("webhook.github.installation.repository_skipped", error=str(exc))
     await db.flush()
+    await audit_service.log_execution(
+        db,
+        tool_name="github_app_installation",
+        action_summary=f"GitHub App installation event processed: {action or 'unknown'}",
+        status="completed",
+        actor="github_webhook",
+        tool_input={
+            "action": action,
+            "installation_id": installation_id,
+            "repository_count": len(repositories),
+        },
+        tool_output={"status": status},
+        source="webhook",
+    )
 
 
 async def _handle_installation_repositories_event(payload: dict[str, Any], db: AsyncSession) -> None:
@@ -117,6 +131,20 @@ async def _handle_installation_repositories_event(payload: dict[str, Any], db: A
                 repository=repository,
             )
     await db.flush()
+    await audit_service.log_execution(
+        db,
+        tool_name="github_app_installation_repositories",
+        action_summary="GitHub App repository access list changed",
+        status="completed",
+        actor="github_webhook",
+        tool_input={
+            "installation_id": installation_id,
+            "added_count": len(payload.get("repositories_added") or []),
+            "removed_count": len(payload.get("repositories_removed") or []),
+        },
+        tool_output={},
+        source="webhook",
+    )
 
 
 async def _handle_failed_workflow_run(payload: dict[str, Any], db: AsyncSession) -> None:

@@ -290,10 +290,14 @@ export interface RepositoryScanResult {
 
 export interface WorkflowPRResult {
   repo_full_name: string;
-  detected_stack: DetectedStack;
-  branch: string;
-  workflow_path: string;
-  pull_request_url: string;
+  detected_stack?: DetectedStack;
+  branch?: string;
+  workflow_path?: string;
+  pull_request_url?: string;
+  status?: "approval_required" | "completed" | "failed" | string;
+  approval_required?: boolean;
+  approval_id?: string;
+  message?: string;
 }
 
 export const repositoryService = {

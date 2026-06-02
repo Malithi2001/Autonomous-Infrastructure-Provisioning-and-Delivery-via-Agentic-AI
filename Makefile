@@ -148,7 +148,7 @@ clean:
 		-o -type d \( -name "__pycache__" -o -name ".pytest_cache" -o -name ".mypy_cache" -o -name ".ruff_cache" -o -name "htmlcov" \) -prune -exec rm -rf {} +
 	@find . \
 		\( -path "./.git" -o -path "./$(BACKEND_VENV)" -o -path "./$(FRONTEND_DIR)/node_modules" -o -path "./.venv" -o -path "./venv" -o -path "./postgres_data" -o -path "./redis_data" \) -prune \
-		-o -type f \( -name "*.pyc" -o -name "*.pyo" -o -name ".coverage" -o -name ".DS_Store" -o -name "*.log" \) -delete
+		-o -type f \( -name "*.pyc" -o -name "*.pyo" -o -name ".coverage*" -o -name "coverage.xml" -o -name ".DS_Store" -o -name "*.log" \) -delete
 	@rm -rf $(FRONTEND_DIR)/dist $(FRONTEND_DIR)/build
 	@rm -rf dist build htmlcov
 	@rm -rf $(FRONTEND_DIR)/node_modules $(BACKEND_VENV) .venv venv

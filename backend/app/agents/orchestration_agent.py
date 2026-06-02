@@ -48,8 +48,8 @@ class OrchestrationAgent:
 
     def handle(self, task: AgentTask) -> AgentResult:
         """Route a task to one specialized agent using deterministic rules."""
-        prepared_task = self._prepare_task(task)
-        route = self._route(prepared_task)
+        prepared_task = self.prepare_task(task)
+        route = self.route_task(prepared_task)
 
         if route == "cli":
             return self.cli_agent.handle(prepared_task)
@@ -68,6 +68,14 @@ class OrchestrationAgent:
             result="I could not route this request to a specialized agent.",
             metadata={},
         )
+
+    def prepare_task(self, task: AgentTask) -> AgentTask:
+        """Return a task enriched with deterministic context extracted from the message."""
+        return self._prepare_task(task)
+
+    def route_task(self, task: AgentTask) -> str:
+        """Return the specialized-agent route for an already prepared task."""
+        return self._route(task)
 
     def _prepare_task(self, task: AgentTask) -> AgentTask:
         extracted = self._extract_context(task.message)

@@ -29,11 +29,12 @@ from app.models.models import ApprovalRequest, Execution
 from app.schemas.schemas import ApprovalDecision, ApprovalRequestOut
 from app.services import audit_service
 from app.services.fix_pr_service import FixPRServiceError, create_fix_pr_for_failure, mark_fix_pr_rejected
+from app.services.github_app_service import GitHubAppError, get_installation_access_token, get_installation_for_repo
 
 router = APIRouter()
 
 
-# ── Helper used by the agent ──────────────────────────────────────────────────
+# Helper used by the agent
 
 async def create_approval_request(
     *,
@@ -79,7 +80,7 @@ async def create_approval_request(
     return record
 
 
-# ── Routes ────────────────────────────────────────────────────────────────────
+# Routes
 
 @router.get("", response_model=list[ApprovalRequestOut])
 @router.get("/", response_model=list[ApprovalRequestOut], include_in_schema=False)
@@ -133,6 +134,8 @@ async def decide_approval(
             detail=f"Approval request is already '{record.status}' — cannot decide again.",
         )
 
+    decider = current_user.get("username", "unknown")
+
     # Check expiry
     if record.expires_at:
         expires_at = record.expires_at
@@ -143,14 +146,23 @@ async def decide_approval(
 
     if expires_at and datetime.now(tz=timezone.utc) > expires_at:
         record.status = "timed_out"
+        await audit_service.log_approval_decision(
+            db,
+            approval_id=record.id,
+            decision="timed_out",
+            tool_name=record.tool_name or "",
+            actor=decider,
+            session_id=record.session_id,
+            reason="Approval request expired before decision.",
+        )
         await db.flush()
+        await db.commit()
         raise HTTPException(status_code=410, detail="Approval request has expired.")
 
     now = datetime.now(tz=timezone.utc)
-    decider = current_user.get("username", "unknown")
 
     if decision.approved:
-        # ── Execute the tool ──────────────────────────────────────────────────
+        # Execute the tool
         tool_input = json.loads(record.tool_input or "{}")
         if record.tool_name == "github_create_fix_pr":
             try:
@@ -166,6 +178,13 @@ async def decide_approval(
             except FixPRServiceError as exc:
                 exec_details = json.dumps({"error": str(exc)}, ensure_ascii=False)
                 exec_status = "failed"
+        elif record.tool_name == "github_create_workflow_pr":
+            exec_details, exec_status = await _create_workflow_pr_from_approval(
+                db=db,
+                tool_input=tool_input,
+                actor=decider,
+                session_id=record.session_id,
+            )
         else:
             exec_details, exec_status = _dispatch_tool(record.tool_name or "", tool_input)
 
@@ -217,7 +236,7 @@ async def decide_approval(
             "execution_details": exec_details,
         }
     else:
-        # ── Reject / cancel ───────────────────────────────────────────────────
+        # Reject / cancel
         tool_input = json.loads(record.tool_input or "{}")
         if record.tool_name == "github_create_fix_pr" and tool_input.get("workflow_failure_id"):
             await mark_fix_pr_rejected(
@@ -270,6 +289,53 @@ async def decide_approval(
             "note": decision.note,
             "decided_by": decider,
         }
+
+
+async def _create_workflow_pr_from_approval(
+    *,
+    db: AsyncSession,
+    tool_input: dict,
+    actor: str,
+    session_id: str | None,
+) -> tuple[str, str]:
+    """Create an approved workflow PR using a GitHub App token when installed."""
+    repo_full_name = str(tool_input.get("repo_full_name") or "").strip()
+    if not repo_full_name:
+        return json.dumps({"error": "repo_full_name is required."}, ensure_ascii=False), "failed"
+
+    try:
+        from app.tools.github_tool import create_workflow_pr
+
+        installation = await get_installation_for_repo(db, repo_full_name)
+        token = get_installation_access_token(installation.installation_id) if installation else None
+        result = create_workflow_pr(
+            repo_full_name,
+            overwrite_existing_workflow=bool(tool_input.get("overwrite_existing_workflow")),
+            token=token,
+        )
+        await audit_service.log_workflow_pr_creation(
+            db,
+            repo_full_name=result.get("repo_full_name") or repo_full_name,
+            branch=result.get("branch") or "",
+            pull_request_url=result.get("pull_request_url"),
+            actor=actor,
+            session_id=session_id,
+            source="hitl",
+        )
+        return json.dumps(result, ensure_ascii=False, default=str), "completed"
+    except (GitHubAppError, Exception) as exc:
+        await audit_service.log_workflow_pr_creation(
+            db,
+            repo_full_name=repo_full_name,
+            branch="",
+            pull_request_url=None,
+            status="failed",
+            error=str(exc),
+            actor=actor,
+            session_id=session_id,
+            source="hitl",
+        )
+        return json.dumps({"error": str(exc)}, ensure_ascii=False), "failed"
 
 
 def _dispatch_tool(tool_name: str, tool_input: dict) -> tuple[str, str]:

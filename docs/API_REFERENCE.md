@@ -424,7 +424,7 @@ Response:
 
 Required permission: `executions:write`
 
-Creates a branch, commits generated workflow YAML, and opens a pull request.
+Creates an approval request when HITL is enabled. After approval, the backend creates a branch, commits generated workflow YAML, and opens a pull request.
 
 Request:
 
@@ -435,7 +435,19 @@ Request:
 }
 ```
 
-Response:
+Approval response:
+
+```json
+{
+  "repo_full_name": "owner/repo",
+  "status": "approval_required",
+  "approval_required": true,
+  "approval_id": "uuid",
+  "message": "Human approval is required before creating the workflow pull request."
+}
+```
+
+Direct execution response when HITL is disabled:
 
 ```json
 {

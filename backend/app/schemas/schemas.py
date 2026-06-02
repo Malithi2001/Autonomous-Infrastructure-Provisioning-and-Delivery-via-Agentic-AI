@@ -236,7 +236,11 @@ class RepositoryWorkflowPRRequest(BaseModel):
 
 class RepositoryWorkflowPRResponse(BaseModel):
     repo_full_name: str
-    detected_stack: CICDStackResponse
-    branch: str
-    workflow_path: str
-    pull_request_url: str
+    detected_stack: Optional[CICDStackResponse] = None
+    branch: Optional[str] = None
+    workflow_path: Optional[str] = None
+    pull_request_url: Optional[str] = None
+    status: Optional[str] = None
+    approval_required: Optional[bool] = None
+    approval_id: Optional[uuid.UUID] = None
+    message: Optional[str] = None
