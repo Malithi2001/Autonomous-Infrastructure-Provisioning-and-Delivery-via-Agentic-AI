@@ -48,8 +48,8 @@ help:
 	@echo "  make docker-logs        Show Docker Compose logs"
 	@echo ""
 	@echo "Cleanup:"
-	@echo "  make clean              Remove safe generated cache/build files only"
-	@echo "  make reset              Stop containers and remove safe generated files"
+	@echo "  make clean              Remove caches, builds, and local dependency installs"
+	@echo "  make reset              Stop containers and remove caches/builds/dependencies"
 
 ## Install backend and frontend dependencies if their manifests exist.
 setup: backend-install frontend-install
@@ -141,13 +141,18 @@ docker-build:
 	@if [ -z "$(COMPOSE)" ]; then echo "Docker Compose is not available."; exit 1; fi
 	$(COMPOSE) build
 
-## Remove safe generated cache/build files only. Keeps source, tests, docs, env examples, datasets, models, dependencies, and DB volumes.
+## Remove generated caches, build output, and local dependency installs. Keeps source, docs, env files, datasets, models, and DB volumes.
 clean:
-	@find . -type d \( -name "__pycache__" -o -name ".pytest_cache" -o -name ".mypy_cache" -o -name ".ruff_cache" -o -name "htmlcov" \) -prune -exec rm -rf {} +
-	@find . -type f \( -name "*.pyc" -o -name "*.pyo" -o -name ".coverage" -o -name ".DS_Store" -o -name "*.log" \) -delete
-	@rm -rf $(FRONTEND_DIR)/dist $(FRONTEND_DIR)/build $(FRONTEND_DIR)/node_modules/.cache
+	@find . \
+		\( -path "./.git" -o -path "./$(BACKEND_VENV)" -o -path "./$(FRONTEND_DIR)/node_modules" -o -path "./.venv" -o -path "./venv" -o -path "./postgres_data" -o -path "./redis_data" \) -prune \
+		-o -type d \( -name "__pycache__" -o -name ".pytest_cache" -o -name ".mypy_cache" -o -name ".ruff_cache" -o -name "htmlcov" \) -prune -exec rm -rf {} +
+	@find . \
+		\( -path "./.git" -o -path "./$(BACKEND_VENV)" -o -path "./$(FRONTEND_DIR)/node_modules" -o -path "./.venv" -o -path "./venv" -o -path "./postgres_data" -o -path "./redis_data" \) -prune \
+		-o -type f \( -name "*.pyc" -o -name "*.pyo" -o -name ".coverage" -o -name ".DS_Store" -o -name "*.log" \) -delete
+	@rm -rf $(FRONTEND_DIR)/dist $(FRONTEND_DIR)/build
 	@rm -rf dist build htmlcov
-	@echo "Removed safe generated cache/build files."
+	@rm -rf $(FRONTEND_DIR)/node_modules $(BACKEND_VENV) .venv venv
+	@echo "Removed generated caches, build outputs, and local dependency installs."
 
 ## Stop Docker Compose services.
 docker-down:
@@ -159,6 +164,6 @@ docker-logs:
 	@if [ -z "$(COMPOSE)" ]; then echo "Docker Compose is not available."; exit 1; fi
 	$(COMPOSE) logs -f
 
-## Stop containers and remove safe generated files only. Does not delete Docker volumes or databases.
+## Stop containers and remove generated files/dependencies. Does not delete Docker volumes or databases.
 reset: docker-down clean
 	@echo "Reset complete. Docker volumes and database files were not removed."
