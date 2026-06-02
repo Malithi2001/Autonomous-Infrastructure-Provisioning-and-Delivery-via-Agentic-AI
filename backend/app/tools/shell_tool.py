@@ -4,6 +4,7 @@ All other commands are blocked for security.
 """
 import subprocess
 import shlex
+import re
 
 from app.core.logging import logger
 
@@ -28,6 +29,23 @@ ALLOWED_COMMANDS = [
 ]
 
 
+_SENSITIVE_COMMAND_PATTERNS = [
+    re.compile(r"(gh[pousr]_|github_pat_)[A-Za-z0-9_]+", re.IGNORECASE),
+    re.compile(r"(Bearer\s+)[^\s\"']+", re.IGNORECASE),
+    re.compile(
+        r"(?i)((token|secret|api[_-]?key|password|credential|access[_-]?key)\s*[:=]\s*)[^\s\"']+"
+    ),
+]
+
+
+def _redact_command_for_log(command: str) -> str:
+    """Redact token-like values before writing shell commands to logs."""
+    redacted = command
+    for pattern in _SENSITIVE_COMMAND_PATTERNS:
+        redacted = pattern.sub(lambda match: f"{match.group(1)}[REDACTED]", redacted)
+    return redacted[:200]
+
+
 def _is_allowed(command: str) -> bool:
     """Check if the command starts with an allowed prefix."""
     cmd_lower = command.strip().lower()
@@ -40,14 +58,14 @@ def execute_safe_shell_command(command: str) -> str:
     Rejects any command not in the allowlist.
     """
     if not _is_allowed(command):
-        logger.warning("shell.blocked", command=command)
+        logger.warning("shell.blocked", command_preview=_redact_command_for_log(command))
         return (
             f"🚫 Command blocked: '{command}'\n"
             f"Only the following commands are permitted:\n"
             + "\n".join(f"  - {c}" for c in ALLOWED_COMMANDS)
         )
     try:
-        logger.info("shell.execute", command=command)
+        logger.info("shell.execute", command_preview=_redact_command_for_log(command))
         result = subprocess.run(
             shlex.split(command),
             capture_output=True,

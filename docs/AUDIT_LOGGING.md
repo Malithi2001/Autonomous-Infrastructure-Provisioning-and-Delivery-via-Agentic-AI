@@ -132,6 +132,8 @@ The service redacts sensitive values and summarizes large payloads before storin
 | Fix PR creation | `log_fix_pr_creation` |
 | Approval decision | `log_approval_decision` |
 | Webhook failure diagnosis | `Execution` + `WorkflowFailure` |
+| Auth register/login/logout/refresh | `Execution` records with `source=auth` |
+| GitHub App installation changes | `Execution` records with `source=webhook` |
 
 ## 5. Sensitive Data Rules
 

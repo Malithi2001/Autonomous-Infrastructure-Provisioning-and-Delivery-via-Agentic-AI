@@ -206,3 +206,9 @@ Demo-safe fallback:
 ## 7. Recommended Closing
 
 > The project demonstrates a safe agentic DevOps loop: detect, recommend, generate, propose through PR, require approval when needed, and record everything for audit. It is not replacing DevOps engineers; it reduces repetitive work while keeping humans in control.
+
+## Screenshot Evidence
+
+Before the final report submission, capture the required UI, GitHub, audit, evaluation, and model evidence listed in `docs/screenshots/README.md`.
+
+Keep screenshots in `docs/screenshots/` for report preparation only. Do not include secrets, tokens, private keys, or sensitive environment values in screenshots.

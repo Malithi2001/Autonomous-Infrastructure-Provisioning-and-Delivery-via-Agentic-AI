@@ -27,10 +27,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.api.routes import approvals as approvals_router, health
 from app.core.database import Base, get_db
 from app.core.security import create_access_token
-from app.models.models import ApprovalRequest, WorkflowFailure
+from app.models.models import ApprovalRequest, RepositoryInstallation, WorkflowFailure
 
 
-# ── In-memory SQLite test DB ──────────────────────────────────────────────────
+# In-memory SQLite test DB
 
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 test_engine = create_async_engine(TEST_DB_URL, connect_args={"check_same_thread": False})
@@ -94,7 +94,7 @@ def _dev_headers() -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-# ── Helper ────────────────────────────────────────────────────────────────────
+# Helper
 
 async def _seed_approval(db: AsyncSession, status: str = "pending", **overrides) -> ApprovalRequest:
     record = ApprovalRequest(
@@ -115,7 +115,7 @@ async def _seed_approval(db: AsyncSession, status: str = "pending", **overrides)
     return record
 
 
-# ── Tests ─────────────────────────────────────────────────────────────────────
+# Tests
 
 class TestCreateApprovalRequest:
     @pytest.mark.asyncio
@@ -257,6 +257,146 @@ class TestDecideApproval:
         assert failure.fix_pr_url == "https://github.com/octo-org/demo-app/pull/456"
 
     @pytest.mark.asyncio
+    async def test_approve_workflow_pr_uses_installation_token(
+        self, client: AsyncClient, db_session: AsyncSession, monkeypatch
+    ):
+        db_session.add(
+            RepositoryInstallation(
+                installation_id=99,
+                repo_full_name="octo-org/demo-app",
+                owner="octo-org",
+                repo="demo-app",
+                default_branch="main",
+                status="active",
+            )
+        )
+        record = ApprovalRequest(
+            id=str(uuid.uuid4()),
+            requested_by="dev",
+            tool_name="github_create_workflow_pr",
+            tool_input=json.dumps(
+                {
+                    "repo_full_name": "octo-org/demo-app",
+                    "overwrite_existing_workflow": True,
+                }
+            ),
+            action="Create GitHub Actions workflow pull request",
+            risk_level="medium",
+            summary="Approve workflow PR for octo-org/demo-app.",
+            status="pending",
+        )
+        db_session.add(record)
+        await db_session.flush()
+
+        monkeypatch.setattr(
+            approvals_router,
+            "get_installation_access_token",
+            lambda installation_id: "installation-token",
+        )
+
+        def _fake_create_workflow_pr(
+            repo_full_name: str,
+            *,
+            overwrite_existing_workflow: bool = False,
+            token: str | None = None,
+        ) -> dict:
+            assert repo_full_name == "octo-org/demo-app"
+            assert overwrite_existing_workflow is True
+            assert token == "installation-token"
+            return {
+                "repo_full_name": "octo-org/demo-app",
+                "branch": "ai-cicd/setup-pipeline",
+                "workflow_path": ".github/workflows/ai-generated-ci.yml",
+                "pull_request_url": "https://github.com/octo-org/demo-app/pull/7",
+            }
+
+        monkeypatch.setattr("app.tools.github_tool.create_workflow_pr", _fake_create_workflow_pr)
+
+        resp = await client.post(
+            f"/api/v1/approvals/{record.id}/decide",
+            json={"approved": True, "note": "Approved for workflow setup"},
+            headers=_admin_headers(),
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "approved"
+        assert body["execution_status"] == "completed"
+        assert "https://github.com/octo-org/demo-app/pull/7" in body["execution_details"]
+        assert '"auth_mode": "github_app_installation"' in body["execution_details"]
+        await db_session.refresh(record)
+        assert record.status == "approved"
+
+    @pytest.mark.asyncio
+    async def test_approve_trigger_workflow_uses_installation_token(
+        self, client: AsyncClient, db_session: AsyncSession, monkeypatch
+    ):
+        db_session.add(
+            RepositoryInstallation(
+                installation_id=101,
+                repo_full_name="octo-org/demo-app",
+                owner="octo-org",
+                repo="demo-app",
+                default_branch="main",
+                status="active",
+            )
+        )
+        record = ApprovalRequest(
+            id=str(uuid.uuid4()),
+            requested_by="dev",
+            tool_name="github_trigger_workflow",
+            tool_input=json.dumps(
+                {
+                    "repo_full_name": "octo-org/demo-app",
+                    "workflow_id": "deploy.yml",
+                    "ref": "main",
+                    "inputs": {"environment": "staging"},
+                }
+            ),
+            action="Trigger GitHub Actions workflow",
+            risk_level="medium",
+            summary="Approve workflow trigger.",
+            status="pending",
+        )
+        db_session.add(record)
+        await db_session.flush()
+
+        monkeypatch.setattr(
+            approvals_router,
+            "get_installation_access_token",
+            lambda installation_id: "installation-token",
+        )
+
+        def _fake_trigger_workflow(
+            repo_full_name: str,
+            workflow_id: str,
+            ref: str = "main",
+            inputs: dict | None = None,
+            *,
+            token: str | None = None,
+        ) -> str:
+            assert repo_full_name == "octo-org/demo-app"
+            assert workflow_id == "deploy.yml"
+            assert ref == "main"
+            assert inputs == {"environment": "staging"}
+            assert token == "installation-token"
+            return "Workflow triggered"
+
+        monkeypatch.setattr("app.tools.github_tool.trigger_workflow", _fake_trigger_workflow)
+
+        resp = await client.post(
+            f"/api/v1/approvals/{record.id}/decide",
+            json={"approved": True, "note": "Trigger staging"},
+            headers=_admin_headers(),
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["execution_status"] == "completed"
+        assert '"auth_mode": "github_app_installation"' in body["execution_details"]
+        assert '"installation_id": 101' in body["execution_details"]
+
+    @pytest.mark.asyncio
     async def test_approve_fix_pr_approval_creates_pr_with_mocked_github(
         self, client: AsyncClient, db_session: AsyncSession, monkeypatch
     ):
@@ -360,6 +500,7 @@ class TestDecideApproval:
         assert body["status"] == "approved"
         assert body["execution_status"] == "completed"
         assert "https://github.com/octo-org/demo-app/pull/321" in body["execution_details"]
+        assert '"auth_mode": "pat_fallback"' in body["execution_details"]
         await db_session.refresh(record)
         await db_session.refresh(failure)
         assert record.status == "approved"
@@ -408,24 +549,8 @@ class TestDecideApproval:
         assert record.status == "rejected"
         assert failure.status == "rejected"
 
-    def test_dispatch_github_create_workflow_pr(self, monkeypatch):
+    def test_dispatch_github_write_tools_require_async_dispatcher(self):
         from app.api.routes import approvals as approvals_router
-
-        def _create_workflow_pr(
-            repo_full_name: str,
-            *,
-            overwrite_existing_workflow: bool = False,
-        ) -> dict:
-            assert repo_full_name == "octo-org/demo-app"
-            assert overwrite_existing_workflow is True
-            return {
-                "repo_full_name": repo_full_name,
-                "branch": "ai-cicd/setup-pipeline",
-                "workflow_path": ".github/workflows/ai-generated-ci.yml",
-                "pull_request_url": "https://github.com/octo-org/demo-app/pull/7",
-            }
-
-        monkeypatch.setattr("app.tools.github_tool.create_workflow_pr", _create_workflow_pr)
 
         details, status = approvals_router._dispatch_tool(
             "github_create_workflow_pr",
@@ -436,8 +561,8 @@ class TestDecideApproval:
             },
         )
 
-        assert status == "completed"
-        assert "https://github.com/octo-org/demo-app/pull/7" in details
+        assert status == "failed"
+        assert "requires the async approval dispatcher" in details
 
     @pytest.mark.asyncio
     async def test_decide_twice_returns_409(

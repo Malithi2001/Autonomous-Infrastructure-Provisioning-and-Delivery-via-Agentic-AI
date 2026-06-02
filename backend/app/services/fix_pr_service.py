@@ -5,7 +5,7 @@ import json
 import re
 import uuid
 from datetime import datetime, timezone
-from typing import Callable
+from typing import Any, Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -129,6 +129,18 @@ PATCHERS: dict[str, Callable[[str], tuple[str, str | None]]] = {
 
 def _github_kwargs(token: str | None) -> dict[str, str]:
     return {"token": token} if token else {}
+
+
+async def _github_auth_for_repo(db: AsyncSession, repo_full_name: str) -> tuple[str | None, str, int | None]:
+    """Return a token override plus safe auth-mode metadata for GitHub writes."""
+    installation = await get_installation_for_repo(db, repo_full_name)
+    if not installation:
+        return None, "pat_fallback", None
+    return (
+        get_installation_access_token(installation.installation_id),
+        "github_app_installation",
+        int(installation.installation_id),
+    )
 
 
 def _recommendation_only(
@@ -345,7 +357,7 @@ async def create_fix_pr_for_failure(
         )
 
     if failure.fix_pr_url:
-        result = {
+        result: dict[str, Any] = {
             "workflow_failure_id": failure.id,
             "repo_full_name": failure.repo_full_name,
             "status": "already_created",
@@ -384,8 +396,7 @@ async def create_fix_pr_for_failure(
         return result
 
     try:
-        installation = await get_installation_for_repo(db, failure.repo_full_name)
-        token = get_installation_access_token(installation.installation_id) if installation else None
+        token, auth_mode, installation_id = await _github_auth_for_repo(db, failure.repo_full_name)
         base_branch = github_tool.get_default_branch(failure.repo_full_name, **_github_kwargs(token))
         workflow_file = _read_workflow_file(failure.repo_full_name, failure.workflow_name, base_branch, token=token)
         if workflow_file is None:
@@ -467,6 +478,7 @@ async def create_fix_pr_for_failure(
             "workflow_failure_id": failure.id,
             "repo_full_name": failure.repo_full_name,
             "status": "fix_pr_created",
+            "auth_mode": auth_mode,
             "branch": branch,
             "workflow_path": workflow_file["path"],
             "pull_request_url": pr_result["html_url"],
@@ -475,6 +487,8 @@ async def create_fix_pr_for_failure(
             "file": file_result,
             "branch_result": branch_result,
         }
+        if installation_id is not None:
+            result["installation_id"] = installation_id
         if audit:
             await _audit(
                 db,

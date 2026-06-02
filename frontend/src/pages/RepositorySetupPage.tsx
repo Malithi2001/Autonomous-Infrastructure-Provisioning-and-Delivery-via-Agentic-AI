@@ -1,17 +1,19 @@
-import { useState } from "react";
+import { getDebugHint, getUserFriendlyError } from "@/lib/errorMessages";
 import {
-  ExternalLink,
-  GitPullRequest,
-  GitBranch,
-  Loader2,
-  Radar,
-  ShieldCheck,
-} from "lucide-react";
-import {
-  repositoryService,
-  type RepositoryScanResult,
-  type WorkflowPRResult,
+    repositoryService,
+    type RepositoryScanResult,
+    type WorkflowPRResult,
 } from "@/services/api";
+import {
+    AlertCircle,
+    ExternalLink,
+    GitBranch,
+    GitPullRequest,
+    Loader2,
+    Radar,
+    ShieldCheck,
+} from "lucide-react";
+import { useState } from "react";
 
 function stackSummary(stack: RepositoryScanResult["stack"]) {
   return [
@@ -189,11 +191,7 @@ export default function RepositorySetupPage() {
       setScanResult(result);
     } catch (err: any) {
       setScanResult(null);
-      setError(
-        err.response?.data?.detail ||
-          err.message ||
-          "Unable to scan this repository.",
-      );
+      setError(getUserFriendlyError(err));
     } finally {
       setScanning(false);
     }
@@ -209,28 +207,26 @@ export default function RepositorySetupPage() {
         overwriteWorkflow,
       );
       setPrResult(result);
-      setScanResult(
-        (current) =>
-          current || {
-            repo_full_name: result.repo_full_name,
-            files: [],
-            stack: result.detected_stack,
-            readiness: {
-              score: 0,
-              grade: "N/A",
-              summary: "Scan the repository to view CI/CD readiness.",
-              strengths: [],
-              findings: [],
-              recommended_next_actions: [],
+      if (result.detected_stack) {
+        setScanResult(
+          (current) =>
+            current || {
+              repo_full_name: result.repo_full_name,
+              files: [],
+              stack: result.detected_stack!,
+              readiness: {
+                score: 0,
+                grade: "N/A",
+                summary: "Scan the repository to view CI/CD readiness.",
+                strengths: [],
+                findings: [],
+                recommended_next_actions: [],
+              },
             },
-          },
-      );
+        );
+      }
     } catch (err: any) {
-      setError(
-        err.response?.data?.detail ||
-          err.message ||
-          "Unable to create a workflow pull request.",
-      );
+      setError(getUserFriendlyError(err));
     } finally {
       setCreatingPr(false);
     }
@@ -290,7 +286,17 @@ export default function RepositorySetupPage() {
             </div>
             {error && (
               <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200">
-                {error}
+                <div className="flex items-start gap-2">
+                  <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-semibold">{error}</p>
+                    {getDebugHint(error) && (
+                      <p className="mt-1 text-xs opacity-80">
+                        Tip: {getDebugHint(error)}
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </section>
@@ -342,28 +348,47 @@ export default function RepositorySetupPage() {
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <p className="text-xs uppercase tracking-[0.16em] text-ink-subtle">
-                    Pull Request Created
+                    {prResult.approval_required ||
+                    prResult.status === "approval_required"
+                      ? "Approval Required"
+                      : "Pull Request Created"}
                   </p>
                   <h2 className="mt-2 text-base font-semibold text-ink">
                     {prResult.repo_full_name}
                   </h2>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <span className="badge-success">
-                      {prResult.workflow_path}
-                    </span>
-                    <span className="badge-info inline-flex items-center gap-1">
-                      <GitBranch size={12} /> {prResult.branch}
-                    </span>
+                    {prResult.workflow_path && (
+                      <span className="badge-success">
+                        {prResult.workflow_path}
+                      </span>
+                    )}
+                    {prResult.branch && (
+                      <span className="badge-info inline-flex items-center gap-1">
+                        <GitBranch size={12} /> {prResult.branch}
+                      </span>
+                    )}
+                    {prResult.approval_id && (
+                      <span className="badge-info inline-flex items-center gap-1">
+                        <ShieldCheck size={12} /> {prResult.approval_id}
+                      </span>
+                    )}
                   </div>
+                  {prResult.message && (
+                    <p className="mt-3 text-sm text-ink-subtle">
+                      {prResult.message}
+                    </p>
+                  )}
                 </div>
-                <a
-                  href={prResult.pull_request_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn-secondary inline-flex items-center gap-2"
-                >
-                  Open PR <ExternalLink size={15} />
-                </a>
+                {prResult.pull_request_url && (
+                  <a
+                    href={prResult.pull_request_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn-secondary inline-flex items-center gap-2"
+                  >
+                    Open PR <ExternalLink size={15} />
+                  </a>
+                )}
               </div>
             </section>
           )}

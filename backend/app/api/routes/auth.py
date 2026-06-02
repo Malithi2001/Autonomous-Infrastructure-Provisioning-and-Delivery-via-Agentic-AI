@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.logging import logger
 from app.core.security import (
     ACCESS_TOKEN_COOKIE_NAME,
     PUBLIC_SIGNUP_ROLES,
@@ -34,6 +35,7 @@ from app.schemas.schemas import (
     UserOut,
     UserRegister,
 )
+from app.services import audit_service
 
 router = APIRouter()
 
@@ -162,6 +164,32 @@ async def _create_session_and_cookie(
     return access_token, refresh_token
 
 
+async def _safe_audit_auth(
+    db: AsyncSession,
+    *,
+    action: str,
+    actor: str,
+    status: str = "completed",
+    tool_input: dict[str, Any] | None = None,
+    error: str | None = None,
+) -> None:
+    """Audit auth events without recording credentials or token values."""
+    try:
+        await audit_service.log_execution(
+            db,
+            tool_name=action,
+            action_summary=action.replace("_", " "),
+            status=status,
+            actor=actor,
+            tool_input=tool_input or {},
+            tool_output={},
+            error=error,
+            source="auth",
+        )
+    except audit_service.AuditError as exc:
+        logger.warning("audit.auth.skipped", action=action, error=str(exc))
+
+
 @router.get("/roles", response_model=RolesResponse)
 async def get_roles():
     """Return role profiles for the login/signup UI."""
@@ -182,6 +210,15 @@ async def register(payload: UserRegister, request: Request, response: Response, 
     """
     requested_role = coerce_role(payload.role or UserRole.DEVELOPER)
     if requested_role not in PUBLIC_SIGNUP_ROLES:
+        await _safe_audit_auth(
+            db,
+            action="auth_register",
+            actor=payload.username,
+            status="failed",
+            tool_input={"username": payload.username, "requested_role": requested_role.value},
+            error="privileged public signup rejected",
+        )
+        await db.commit()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin and operator accounts must be created by an existing admin.",
@@ -196,6 +233,12 @@ async def register(payload: UserRegister, request: Request, response: Response, 
         is_active=True,
     )
     access_token, refresh_token = await _create_session_and_cookie(user, request, response, db)
+    await _safe_audit_auth(
+        db,
+        action="auth_register",
+        actor=user.username,
+        tool_input={"username": user.username, "role": user.role.value},
+    )
     return _login_response(user, access_token, refresh_token)
 
 
@@ -213,6 +256,15 @@ async def login(request: Request, response: Response, db: AsyncSession = Depends
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(password, user.hashed_password):
+        await _safe_audit_auth(
+            db,
+            action="auth_login",
+            actor=identifier or "unknown",
+            status="failed",
+            tool_input={"identifier": identifier},
+            error="invalid credentials",
+        )
+        await db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password.",
@@ -220,14 +272,38 @@ async def login(request: Request, response: Response, db: AsyncSession = Depends
         )
 
     if not user.is_active:
+        await _safe_audit_auth(
+            db,
+            action="auth_login",
+            actor=user.username,
+            status="failed",
+            tool_input={"username": user.username},
+            error="account deactivated",
+        )
+        await db.commit()
         raise HTTPException(status_code=403, detail="Account is deactivated.")
 
     access_token, refresh_token = await _create_session_and_cookie(user, request, response, db)
+    await _safe_audit_auth(
+        db,
+        action="auth_login",
+        actor=user.username,
+        tool_input={"username": user.username, "role": user.role.value},
+    )
     return _login_response(user, access_token, refresh_token)
 
 
 @router.post("/logout", status_code=204)
-async def logout(response: Response):
+async def logout(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    actor = "anonymous"
+    access_token = request.cookies.get(ACCESS_TOKEN_COOKIE_NAME)
+    if access_token:
+        try:
+            payload = decode_token(access_token)
+            actor = payload.get("username") or payload.get("sub") or actor
+        except Exception:
+            actor = "expired_session"
+    await _safe_audit_auth(db, action="auth_logout", actor=actor)
     _clear_access_cookie(response)
     return None
 
@@ -270,6 +346,12 @@ async def refresh_token(payload: RefreshRequest, response: Response, db: AsyncSe
     )
     await db.flush()
     _set_access_cookie(response, access_token)
+    await _safe_audit_auth(
+        db,
+        action="auth_refresh",
+        actor=user.username,
+        tool_input={"username": user.username, "role": user.role.value},
+    )
 
     return TokenResponse(
         access_token=access_token,
@@ -313,5 +395,11 @@ async def create_user(
         password=payload.password,
         role=role,
         is_active=payload.is_active,
+    )
+    await _safe_audit_auth(
+        db,
+        action="auth_admin_create_user",
+        actor=current_user.get("username") or current_user.get("sub") or "unknown",
+        tool_input={"username": user.username, "role": user.role.value, "is_active": user.is_active},
     )
     return user

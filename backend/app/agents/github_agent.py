@@ -10,6 +10,7 @@ from app.services.repo_analyzer import detect_stack
 from app.services import failure_prediction_service, fix_pr_service, fix_recommendation_service
 from app.services.fix_pr_service import FixPRServiceError
 from app.services.failure_prediction_service import FailurePredictionError, FailurePredictionUnavailable
+from app.services.github_app_service import GitHubAppError, get_installation_access_token, get_installation_for_repo
 from app.tools import github_tool
 
 
@@ -165,6 +166,31 @@ class GitHubAgent:
         """Handle GitHub actions that require async services."""
         intent = self._intent(task.message)
         if intent != "github_create_fix_pr":
+            token = None
+            if db is not None:
+                repo_full_name = self._repo_full_name(task)
+                if repo_full_name:
+                    try:
+                        token = await self._installation_token(db, repo_full_name)
+                    except GitHubAppError as exc:
+                        return self._failure(intent, "low", f"Unable to create GitHub App token: {exc}")
+
+            if intent == "github_scan_repository":
+                return self._scan_repository(task, token=token)
+            if intent == "github_create_workflow_pr":
+                return self._create_workflow_pr(task, token=token)
+            if intent == "github_list_workflows":
+                return self._list_workflows(task, token=token)
+            if intent == "github_recent_runs":
+                return self._recent_runs(task, token=token)
+            if intent == "github_workflow_status":
+                return self._workflow_status(task, token=token)
+            if intent == "github_download_workflow_logs":
+                return self._download_workflow_logs(task, token=token)
+            if intent == "github_diagnose_workflow_run":
+                return self._diagnose_workflow_run(task, token=token)
+            if intent == "github_trigger_workflow":
+                return self._trigger_workflow(task, token=token)
             return self.handle(task)
 
         if db is None:
@@ -227,14 +253,25 @@ class GitHubAgent:
                 metadata={},
             )
 
-    def _scan_repository(self, task: AgentTask) -> AgentResult:
+    async def _installation_token(self, db: AsyncSession, repo_full_name: str) -> str | None:
+        """Resolve a GitHub App installation token for an installed repository."""
+        installation = await get_installation_for_repo(db, repo_full_name)
+        if not installation:
+            return None
+        return get_installation_access_token(installation.installation_id)
+
+    def _scan_repository(self, task: AgentTask, *, token: str | None = None) -> AgentResult:
         intent = "github_scan_repository"
         repo_full_name = self._repo_full_name(task)
         if not repo_full_name:
             return self._missing_repo(intent, risk_level="low")
 
         try:
-            analysis = github_tool.get_repository_analysis_inputs(repo_full_name)
+            analysis = (
+                github_tool.get_repository_analysis_inputs(repo_full_name, token=token)
+                if token
+                else github_tool.get_repository_analysis_inputs(repo_full_name)
+            )
             files = analysis["files"]
             stack = detect_stack(analysis["analysis_inputs"])
             warning_count = len(stack.get("ci_warnings") or [])
@@ -259,7 +296,7 @@ class GitHubAgent:
         except Exception as exc:
             return self._failure(intent, "low", f"Unable to scan repository {repo_full_name}: {exc}")
 
-    def _create_workflow_pr(self, task: AgentTask) -> AgentResult:
+    def _create_workflow_pr(self, task: AgentTask, *, token: str | None = None) -> AgentResult:
         intent = "github_create_workflow_pr"
         repo_full_name = self._repo_full_name(task)
         if not repo_full_name:
@@ -267,9 +304,17 @@ class GitHubAgent:
 
         try:
             overwrite_existing_workflow = bool(task.context.get("overwrite_existing_workflow"))
-            result = github_tool.create_workflow_pr(
-                repo_full_name,
-                overwrite_existing_workflow=overwrite_existing_workflow,
+            result = (
+                github_tool.create_workflow_pr(
+                    repo_full_name,
+                    overwrite_existing_workflow=overwrite_existing_workflow,
+                    token=token,
+                )
+                if token
+                else github_tool.create_workflow_pr(
+                    repo_full_name,
+                    overwrite_existing_workflow=overwrite_existing_workflow,
+                )
             )
             pull_request_url = result.get("pull_request_url")
             return AgentResult(
@@ -291,13 +336,17 @@ class GitHubAgent:
         except Exception as exc:
             return self._failure(intent, "medium", f"Unable to create workflow PR for {repo_full_name}: {exc}")
 
-    def _list_workflows(self, task: AgentTask) -> AgentResult:
+    def _list_workflows(self, task: AgentTask, *, token: str | None = None) -> AgentResult:
         intent = "github_list_workflows"
         repo_full_name = self._repo_full_name(task)
         if not repo_full_name:
             return self._missing_repo(intent, risk_level="low")
 
-        result = github_tool.list_workflows(repo_full_name)
+        result = (
+            github_tool.list_workflows(repo_full_name, token=token)
+            if token
+            else github_tool.list_workflows(repo_full_name)
+        )
         success = not self._looks_like_tool_error(result)
         return AgentResult(
             selected_agent=self.name,
@@ -308,14 +357,18 @@ class GitHubAgent:
             metadata={"repo_full_name": repo_full_name, "tool_called": "list_workflows"},
         )
 
-    def _recent_runs(self, task: AgentTask) -> AgentResult:
+    def _recent_runs(self, task: AgentTask, *, token: str | None = None) -> AgentResult:
         intent = "github_recent_runs"
         repo_full_name = self._repo_full_name(task)
         if not repo_full_name:
             return self._missing_repo(intent, risk_level="low")
 
         limit = self._limit(task)
-        result = github_tool.list_recent_runs(repo_full_name, limit=limit)
+        result = (
+            github_tool.list_recent_runs(repo_full_name, limit=limit, token=token)
+            if token
+            else github_tool.list_recent_runs(repo_full_name, limit=limit)
+        )
         success = not self._looks_like_tool_error(result)
         return AgentResult(
             selected_agent=self.name,
@@ -326,7 +379,7 @@ class GitHubAgent:
             metadata={"repo_full_name": repo_full_name, "limit": limit, "tool_called": "list_recent_runs"},
         )
 
-    def _workflow_status(self, task: AgentTask) -> AgentResult:
+    def _workflow_status(self, task: AgentTask, *, token: str | None = None) -> AgentResult:
         intent = "github_workflow_status"
         repo_full_name = self._repo_full_name(task)
         run_id = self._run_id(task)
@@ -335,7 +388,11 @@ class GitHubAgent:
         if not run_id:
             return self._missing_run_id(intent)
 
-        result = github_tool.get_workflow_run_status(repo_full_name, run_id)
+        result = (
+            github_tool.get_workflow_run_status(repo_full_name, run_id, token=token)
+            if token
+            else github_tool.get_workflow_run_status(repo_full_name, run_id)
+        )
         success = not self._looks_like_tool_error(result)
         return AgentResult(
             selected_agent=self.name,
@@ -346,7 +403,7 @@ class GitHubAgent:
             metadata={"repo_full_name": repo_full_name, "run_id": run_id, "tool_called": "get_workflow_run_status"},
         )
 
-    def _download_workflow_logs(self, task: AgentTask) -> AgentResult:
+    def _download_workflow_logs(self, task: AgentTask, *, token: str | None = None) -> AgentResult:
         intent = "github_download_workflow_logs"
         repo_full_name = self._repo_full_name(task)
         run_id = self._run_id(task)
@@ -356,7 +413,11 @@ class GitHubAgent:
             return self._missing_run_id(intent)
 
         try:
-            log_text = github_tool.download_workflow_logs(repo_full_name, run_id)
+            log_text = (
+                github_tool.download_workflow_logs(repo_full_name, run_id, token=token)
+                if token
+                else github_tool.download_workflow_logs(repo_full_name, run_id)
+            )
             return AgentResult(
                 selected_agent=self.name,
                 intent=intent,
@@ -374,7 +435,7 @@ class GitHubAgent:
         except Exception as exc:
             return self._failure(intent, "low", f"Unable to download workflow logs for run {run_id}: {exc}")
 
-    def _diagnose_workflow_run(self, task: AgentTask) -> AgentResult:
+    def _diagnose_workflow_run(self, task: AgentTask, *, token: str | None = None) -> AgentResult:
         intent = "github_diagnose_workflow_run"
         repo_full_name = self._repo_full_name(task)
         run_id = self._run_id(task)
@@ -384,7 +445,11 @@ class GitHubAgent:
             return self._missing_run_id(intent)
 
         try:
-            log_text = github_tool.download_workflow_logs(repo_full_name, run_id)
+            log_text = (
+                github_tool.download_workflow_logs(repo_full_name, run_id, token=token)
+                if token
+                else github_tool.download_workflow_logs(repo_full_name, run_id)
+            )
             prediction = failure_prediction_service.predict_failure(log_text)
             label = str(prediction.get("label") or "unknown_failure")
             confidence = prediction.get("confidence")
@@ -416,7 +481,7 @@ class GitHubAgent:
         except Exception as exc:
             return self._failure(intent, "low", f"GitHub Agent failed to diagnose workflow run {run_id}: {exc}")
 
-    def _trigger_workflow(self, task: AgentTask) -> AgentResult:
+    def _trigger_workflow(self, task: AgentTask, *, token: str | None = None) -> AgentResult:
         intent = "github_trigger_workflow"
         repo_full_name = self._repo_full_name(task)
         workflow_id = self._workflow_id(task)
@@ -436,7 +501,11 @@ class GitHubAgent:
             )
 
         risk_level = "high" if self._is_production_or_deploy(task, workflow_id, ref) else "medium"
-        result = github_tool.trigger_workflow(repo_full_name, workflow_id, ref=ref, inputs=inputs)
+        result = (
+            github_tool.trigger_workflow(repo_full_name, workflow_id, ref=ref, inputs=inputs, token=token)
+            if token
+            else github_tool.trigger_workflow(repo_full_name, workflow_id, ref=ref, inputs=inputs)
+        )
         success = not self._looks_like_tool_error(result)
         return AgentResult(
             selected_agent=self.name,

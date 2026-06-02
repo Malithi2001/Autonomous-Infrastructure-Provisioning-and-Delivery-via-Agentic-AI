@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import uuid
+from datetime import datetime, timezone
 
 import pytest
 import pytest_asyncio
@@ -12,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.api.routes import webhooks
 from app.core.database import Base, get_db
+from app.core.security import create_access_token
 from app.models.models import Execution, RepositoryInstallation, WorkflowFailure
 
 
@@ -78,6 +81,17 @@ def _failed_workflow_payload() -> dict:
             "html_url": "https://github.com/octo-org/demo-app/actions/runs/123456789",
         },
     }
+
+
+def _auth_headers(role: str = "viewer") -> dict[str, str]:
+    token = create_access_token(
+        {
+            "sub": str(uuid.uuid4()),
+            "username": "webhook-debug-test-user",
+            "role": role,
+        }
+    )
+    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.mark.asyncio
@@ -303,3 +317,73 @@ async def test_failed_workflow_run_returns_200_when_diagnosis_crashes(
     failure = failure_result.scalar_one()
     assert failure.status == "diagnosis_failed"
     assert failure.predicted_label is None
+
+
+@pytest.mark.asyncio
+async def test_failed_workflow_run_returns_200_when_prediction_fails(
+    client: TestClient,
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    def _fake_download_workflow_logs(repo_full_name: str, run_id: int) -> str:
+        return "downloaded GitHub Actions log: pytest assertion failed"
+
+    def _broken_predict_failure(log_text: str) -> dict:
+        raise webhooks.FailurePredictionError("model could not classify this log")
+
+    monkeypatch.setattr(webhooks, "download_workflow_logs", _fake_download_workflow_logs)
+    monkeypatch.setattr(webhooks.failure_prediction_service, "predict_failure", _broken_predict_failure)
+
+    response = client.post(
+        "/api/v1/webhooks/github",
+        headers={
+            "X-GitHub-Event": "workflow_run",
+            "X-GitHub-Delivery": "delivery-123",
+        },
+        json=_failed_workflow_payload(),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"received": True, "event": "workflow_run"}
+
+    result = await db_session.execute(select(Execution).where(Execution.source == "webhook"))
+    execution = result.scalar_one()
+    assert execution.status == "failed"
+    details = json.loads(execution.details or "{}")
+    assert details["request_id"] == "delivery-123"
+    assert details["error"] == "model could not classify this log"
+
+    failure_result = await db_session.execute(select(WorkflowFailure))
+    failure = failure_result.scalar_one()
+    assert failure.status == "diagnosis_failed"
+    assert failure.log_excerpt == "downloaded GitHub Actions log: pytest assertion failed"
+
+
+@pytest.mark.asyncio
+async def test_recent_webhook_events_returns_webhook_audit_records(
+    client: TestClient,
+    db_session: AsyncSession,
+):
+    execution = Execution(
+        id=str(uuid.uuid4()),
+        requested_by="github_webhook",
+        tool_name="failure_prediction_model",
+        tool_input="{}",
+        status="failed",
+        summary="Webhook diagnosis failed for octo-org/demo-app",
+        details=json.dumps({"request_id": "debug-request-id"}),
+        source="webhook",
+        started_at=datetime.now(tz=timezone.utc),
+        completed_at=datetime.now(tz=timezone.utc),
+    )
+    db_session.add(execution)
+    await db_session.flush()
+
+    response = client.get("/api/v1/webhooks/recent-events", headers=_auth_headers())
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["id"] == execution.id
+    assert body[0]["source"] == "webhook"
+    assert body[0]["tool_name"] == "failure_prediction_model"

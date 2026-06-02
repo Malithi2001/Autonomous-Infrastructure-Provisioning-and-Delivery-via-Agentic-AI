@@ -10,9 +10,10 @@ This directory contains the current documentation for the Smart DevOps Assistant
 4. [API Reference](API_REFERENCE.md) - backend endpoints and request/response shapes.
 5. [Audit Logging](AUDIT_LOGGING.md) - execution history, approvals, and safety controls.
 6. [Deployment](DEPLOYMENT.md) - runtime topology and environment requirements.
-7. [Evaluation Plan](EVALUATION_PLAN.md) - how to evaluate the final-year project.
-8. [MVP Demo](MVP_DEMO.md) - short demo flow.
-9. [Final Demo](FINAL_DEMO.md) - full supervisor presentation flow.
+7. [GitHub End-to-End Checklist](GITHUB_E2E_CHECKLIST.md) - real repository verification flow.
+8. [Evaluation Plan](EVALUATION_PLAN.md) - how to evaluate the final-year project.
+9. [MVP Demo](MVP_DEMO.md) - short demo flow.
+10. [Final Demo](FINAL_DEMO.md) - full supervisor presentation flow.
 
 ## Supporting Root Docs
 

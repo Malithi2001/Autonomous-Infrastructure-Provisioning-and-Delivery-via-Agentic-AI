@@ -14,6 +14,8 @@ The project supports three practical modes:
 
 The core CI/CD features do not require Docker. Docker Compose is only a convenient way to run the full app stack together.
 
+The repository deploy workflow is optional. If AWS and EC2 secrets are not configured, the workflow records a skipped deployment and exits successfully so ordinary CI does not fail.
+
 ## 2. Runtime Components
 
 ```mermaid
@@ -98,6 +100,8 @@ https://your-backend-domain/api/v1/webhooks/github
 ```
 
 Localhost is not publicly reachable by GitHub. For local webhook testing, expose the backend through a secure tunnel and use that public URL.
+
+Use [GitHub End-to-End Checklist](GITHUB_E2E_CHECKLIST.md) to verify the full repository scan, approval, pull request, webhook, and diagnosis loop.
 
 ## 5. Database Notes
 

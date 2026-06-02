@@ -11,6 +11,7 @@ import Layout from "@/components/layout/Layout";
 import ChatPage from "@/pages/ChatPage";
 import ApprovalsPage from "@/pages/ApprovalsPage";
 import DiagnosisPage from "@/pages/DiagnosisPage";
+import EvaluationPage from "@/pages/EvaluationPage";
 import ExecutionsPage from "@/pages/ExecutionsPage";
 import LoginPage from "@/pages/LoginPage";
 import MultiAgentPage from "@/pages/MultiAgentPage";
@@ -174,6 +175,14 @@ function AppRoutes() {
           element={
             <RoleProtectedRoute>
               <ExecutionsPage />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="evaluation"
+          element={
+            <RoleProtectedRoute>
+              <EvaluationPage />
             </RoleProtectedRoute>
           }
         />

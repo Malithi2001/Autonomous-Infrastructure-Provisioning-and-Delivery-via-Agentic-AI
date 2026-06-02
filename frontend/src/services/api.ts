@@ -140,7 +140,17 @@ export interface AgentOrchestrationResult {
   risk_level: string;
   success: boolean;
   result: string;
-  metadata: Record<string, unknown>;
+  metadata: Record<string, unknown> & {
+    trace_steps?: AgentTraceStep[];
+  };
+}
+
+export interface AgentTraceStep {
+  step_number: number;
+  actor: string;
+  action: string;
+  status: string;
+  details?: Record<string, unknown> | string | null;
 }
 
 export const approvalService = {
@@ -290,11 +300,34 @@ export interface RepositoryScanResult {
 
 export interface WorkflowPRResult {
   repo_full_name: string;
-  detected_stack: DetectedStack;
-  branch: string;
-  workflow_path: string;
-  pull_request_url: string;
+  detected_stack?: DetectedStack;
+  branch?: string;
+  workflow_path?: string;
+  pull_request_url?: string;
+  status?: "approval_required" | "completed" | "failed" | string;
+  approval_required?: boolean;
+  approval_id?: string;
+  message?: string;
 }
+
+export interface EvaluationSummary {
+  dataset_size: number | null;
+  number_of_labels: number | null;
+  accuracy: number | null;
+  macro_f1: number | null;
+  weighted_f1: number | null;
+  total_workflow_failures: number;
+  total_fix_prs_created: number;
+  total_audit_logs: number;
+  total_approvals: number;
+}
+
+export const evaluationService = {
+  summary: async (): Promise<EvaluationSummary> => {
+    const res = await api.get<EvaluationSummary>("/evaluation/summary");
+    return res.data;
+  },
+};
 
 export const repositoryService = {
   scan: async (repoFullName: string): Promise<RepositoryScanResult> => {

@@ -3,14 +3,15 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import require_permission
-from app.models.models import Execution
+from app.models.models import ApprovalRequest, Execution
 from app.schemas.schemas import (
     RepositoryInstallationOut,
     RepositoryScanRequest,
@@ -97,7 +98,11 @@ async def scan_repository(
     }
 
 
-@router.post("/create-workflow-pr", response_model=RepositoryWorkflowPRResponse)
+@router.post(
+    "/create-workflow-pr",
+    response_model=RepositoryWorkflowPRResponse,
+    response_model_exclude_none=True,
+)
 async def create_repository_workflow_pr(
     request: RepositoryWorkflowPRRequest,
     db: AsyncSession = Depends(get_db),
@@ -124,6 +129,57 @@ async def create_repository_workflow_pr(
     )
     db.add(execution)
     await db.flush()
+
+    if settings.ENABLE_HITL:
+        approval = ApprovalRequest(
+            id=str(uuid.uuid4()),
+            session_id=str(uuid.uuid4()),
+            requested_by=actor,
+            tool_name="github_create_workflow_pr",
+            tool_input=execution.tool_input,
+            action="Create GitHub Actions workflow pull request",
+            risk_level="medium",
+            summary=f"Approve workflow PR creation for {request.repo_full_name}.",
+            status="pending",
+            expires_at=now + timedelta(seconds=settings.HITL_APPROVAL_TIMEOUT_SECONDS),
+        )
+        db.add(approval)
+        await db.flush()
+        await db.refresh(approval)
+
+        execution.status = "pending"
+        execution.approval_id = approval.id
+        execution.summary = f"Approval required before creating workflow PR for {request.repo_full_name}"
+        execution.details = json.dumps(
+            {
+                "approval_required": True,
+                "approval_id": approval.id,
+                "repo_full_name": request.repo_full_name,
+                "overwrite_existing_workflow": request.overwrite_existing_workflow,
+            },
+            ensure_ascii=False,
+        )
+        await audit_service.log_execution(
+            db,
+            tool_name="github_workflow_pr",
+            action_summary=f"Approval required before creating workflow PR for {request.repo_full_name}",
+            status="pending",
+            actor=actor,
+            tool_input={
+                "repo": request.repo_full_name,
+                "overwrite_existing_workflow": request.overwrite_existing_workflow,
+            },
+            tool_output={"approval_id": approval.id},
+            session_id=approval.session_id,
+            source="api",
+        )
+        return {
+            "repo_full_name": request.repo_full_name,
+            "status": "approval_required",
+            "approval_required": True,
+            "approval_id": approval.id,
+            "message": "Human approval is required before creating the workflow pull request.",
+        }
 
     try:
         token = await _installation_token_for_repo(db, request.repo_full_name)

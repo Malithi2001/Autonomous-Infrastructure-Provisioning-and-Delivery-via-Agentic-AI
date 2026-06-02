@@ -1,10 +1,11 @@
-import { useState } from "react";
-import { AlertCircle, FileCode2, Loader2, Sparkles, Wand2 } from "lucide-react";
+import { getDebugHint, getUserFriendlyError } from "@/lib/errorMessages";
 import {
-  cicdAssistantService,
-  type DetectedStack,
-  type FailurePrediction,
+    cicdAssistantService,
+    type DetectedStack,
+    type FailurePrediction,
 } from "@/services/api";
+import { AlertCircle, FileCode2, Loader2, Sparkles, Wand2 } from "lucide-react";
+import { useState } from "react";
 
 const sampleLog = `npm ERR! Missing script: "test"
 npm ERR!
@@ -58,11 +59,7 @@ export default function DiagnosisPage() {
       setPrediction(result);
     } catch (err: any) {
       setPrediction(null);
-      setPredictionError(
-        err.response?.data?.detail ||
-          err.message ||
-          "Unable to predict this failure.",
-      );
+      setPredictionError(getUserFriendlyError(err));
     } finally {
       setPredicting(false);
     }
@@ -86,11 +83,7 @@ export default function DiagnosisPage() {
       setStack(null);
       setWorkflowPath("");
       setWorkflowYaml("");
-      setWorkflowError(
-        err.response?.data?.detail ||
-          err.message ||
-          "Unable to generate a workflow.",
-      );
+      setWorkflowError(getUserFriendlyError(err));
     } finally {
       setGenerating(false);
     }
@@ -155,9 +148,19 @@ export default function DiagnosisPage() {
                   Predict Failure
                 </button>
                 {predictionError && (
-                  <span className="text-sm text-red-600 dark:text-red-300">
-                    {predictionError}
-                  </span>
+                  <div className="w-full">
+                    <div className="inline-flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-200">
+                      <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                      <div>
+                        <p className="font-semibold">{predictionError}</p>
+                        {getDebugHint(predictionError) && (
+                          <p className="mt-1 text-xs opacity-80">
+                            Tip: {getDebugHint(predictionError)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
 
@@ -231,9 +234,19 @@ export default function DiagnosisPage() {
                   Generate Workflow
                 </button>
                 {workflowError && (
-                  <span className="text-sm text-red-600 dark:text-red-300">
-                    {workflowError}
-                  </span>
+                  <div className="w-full">
+                    <div className="inline-flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-200">
+                      <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                      <div>
+                        <p className="font-semibold">{workflowError}</p>
+                        {getDebugHint(workflowError) && (
+                          <p className="mt-1 text-xs opacity-80">
+                            Tip: {getDebugHint(workflowError)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
 

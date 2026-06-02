@@ -175,6 +175,7 @@ export function canAccessPath(
     return hasPermission(role, "approvals:read");
   if (path.startsWith("/executions"))
     return hasPermission(role, "executions:read");
+  if (path.startsWith("/evaluation")) return hasPermission(role, "metrics:read");
   if (path.startsWith("/multi-agent")) return hasPermission(role, "agent:chat");
   if (path.startsWith("/chat") || path === "/")
     return hasPermission(role, "agent:chat");

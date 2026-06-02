@@ -53,10 +53,16 @@ frontend/node_modules/.cache/
 
 # ── Environment Files ─────────────────────────────────────────────────────────
 .env
+.env.*
+!.env.example
 .env.local
 .env.*.local
 backend/.env
+backend/.env.*
+!backend/.env.example
 frontend/.env
+frontend/.env.*
+!frontend/.env.example
 
 # ── Docker ────────────────────────────────────────────────────────────────────
 # (docker-compose.override.yml is gitignored — use for local overrides)
@@ -76,14 +82,19 @@ logs/
 *.pid
 
 # ── ML Generated Reports ─────────────────────────────────────────────────────
-# Keep datasets and demo model artifacts tracked; ignore generated reports.
-backend/app/ml/reports/*.png
-backend/app/ml/reports/*.txt
-backend/app/ml/reports/*.json
+# Keep final evaluation reports tracked; ignore any extra generated artifacts.
+backend/app/ml/reports/*
+!backend/app/ml/reports/metrics.json
+!backend/app/ml/reports/classification_report.txt
+!backend/app/ml/reports/confusion_matrix.png
+!backend/app/ml/reports/model_summary.md
 
 # ── Database ──────────────────────────────────────────────────────────────────
 *.sqlite3
+*.sqlite
+*.sqlite-journal
 *.db
+*.db-journal
 postgres_data/
 
 # ── Secrets / Keys ────────────────────────────────────────────────────────────
