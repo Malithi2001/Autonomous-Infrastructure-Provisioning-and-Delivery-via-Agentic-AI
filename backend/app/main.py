@@ -12,6 +12,7 @@ from app.api.routes import (
     auth,
     cicd,
     executions,
+    evaluation,
     health,
     model,
     repositories,
@@ -66,6 +67,7 @@ app.add_api_websocket_route("/ws/agent", agent.agent_ws)
 app.include_router(approvals.router,   prefix="/api/v1/approvals",  tags=["HITL Approvals"])
 app.include_router(executions.router,  prefix="/api/v1/executions", tags=["Executions"])
 app.include_router(executions.router,  prefix="/api/v1/audit",      tags=["Audit"])
+app.include_router(evaluation.router,  prefix="/api/v1/evaluation", tags=["Evaluation"])
 app.include_router(model.router,       prefix="/api/v1/model",      tags=["Failure Prediction Model"])
 app.include_router(cicd.router,        prefix="/api/v1/cicd",       tags=["CI/CD"])
 app.include_router(repositories.router, prefix="/api/v1/repositories", tags=["Repositories"])

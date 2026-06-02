@@ -3,6 +3,7 @@ import {
   Bot,
   Braces,
   CheckCircle2,
+  Circle,
   Loader2,
   Network,
   Play,
@@ -10,7 +11,11 @@ import {
   ShieldAlert,
   Sparkles,
 } from "lucide-react";
-import { agentService, type AgentOrchestrationResult } from "@/services/api";
+import {
+  agentService,
+  type AgentOrchestrationResult,
+  type AgentTraceStep,
+} from "@/services/api";
 
 const demoContexts = {
   containers: "{}",
@@ -163,6 +168,8 @@ function ResultPanel({ result }: { result: AgentOrchestrationResult }) {
           </p>
         </div>
 
+        <AgentTracePanel traceSteps={result.metadata.trace_steps} />
+
         <details className="rounded-2xl border border-surface-600 bg-surface-950">
           <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-ink">
             Metadata JSON
@@ -173,6 +180,65 @@ function ResultPanel({ result }: { result: AgentOrchestrationResult }) {
         </details>
       </div>
     </section>
+  );
+}
+
+function traceStatusClass(status: string) {
+  if (status === "completed") return "badge-success";
+  if (status === "pending") return "badge-warning";
+  if (status === "failed") return "badge-error";
+  return "badge-info";
+}
+
+function TraceDetails({ details }: { details: AgentTraceStep["details"] }) {
+  if (!details) return null;
+  if (typeof details === "string") {
+    return <p className="mt-1 text-xs text-ink-subtle">{details}</p>;
+  }
+  return (
+    <pre className="mt-2 max-h-28 overflow-auto rounded-xl border border-surface-600 bg-surface-950 p-3 text-xs leading-5 text-ink-subtle">
+      <code>{formatJson(details)}</code>
+    </pre>
+  );
+}
+
+function AgentTracePanel({ traceSteps }: { traceSteps?: AgentTraceStep[] }) {
+  if (!traceSteps || traceSteps.length === 0) return null;
+
+  return (
+    <div className="rounded-2xl border border-surface-600 bg-surface-900/70 p-4">
+      <p className="text-xs uppercase tracking-[0.16em] text-ink-subtle">
+        Agent Trace
+      </p>
+      <ol className="mt-4 space-y-4">
+        {traceSteps.map((step, index) => (
+          <li key={`${step.step_number}-${step.actor}`} className="flex gap-3">
+            <div className="flex flex-col items-center">
+              <div className="flex h-7 w-7 items-center justify-center rounded-full border border-primary-500/30 bg-primary-500/10 text-xs font-semibold text-primary-700 dark:text-primary-200">
+                {step.step_number || index + 1}
+              </div>
+              {index < traceSteps.length - 1 && (
+                <div className="mt-2 h-full min-h-8 w-px bg-surface-600" />
+              )}
+            </div>
+            <div className="min-w-0 flex-1 pb-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <Circle
+                  size={9}
+                  className="fill-primary-500 text-primary-500"
+                />
+                <p className="text-sm font-semibold text-ink">{step.actor}</p>
+                <span className={traceStatusClass(step.status)}>
+                  {step.status}
+                </span>
+              </div>
+              <p className="mt-1 text-sm text-ink-muted">{step.action}</p>
+              <TraceDetails details={step.details} />
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 

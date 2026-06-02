@@ -45,6 +45,9 @@ def test_orchestration_agent_routes_running_containers_to_cli_agent():
     assert result.intent == "docker_list_containers"
     assert result.success is True
     assert result.metadata["tool_called"] == "list_containers"
+    assert result.metadata["trace_steps"][1]["actor"] == "Orchestration Agent"
+    assert result.metadata["trace_steps"][2]["actor"] == "CLI Agent"
+    assert result.metadata["trace_steps"][3]["actor"] == "Docker Tool"
 
 
 def test_orchestration_agent_routes_generate_workflow_to_cicd_agent():
@@ -62,6 +65,7 @@ def test_orchestration_agent_routes_generate_workflow_to_cicd_agent():
     assert result.selected_agent == "cicd_agent"
     assert result.intent == "cicd_generate_workflow"
     assert result.metadata["workflow_path"] == ".github/workflows/ai-generated-ci.yml"
+    assert result.metadata["trace_steps"][2]["actor"] == "CI/CD Agent"
 
 
 def test_orchestration_agent_routes_failure_log_to_diagnosis_agent():
@@ -79,6 +83,7 @@ def test_orchestration_agent_routes_failure_log_to_diagnosis_agent():
     assert result.selected_agent == "diagnosis_agent"
     assert result.intent == "cicd_failure_diagnosis"
     assert result.metadata["label"] == "npm_missing_test_script"
+    assert result.metadata["trace_steps"][2]["actor"] == "Diagnosis Agent"
 
 
 def test_orchestration_agent_routes_repository_request_to_github_agent():
@@ -96,6 +101,7 @@ def test_orchestration_agent_routes_repository_request_to_github_agent():
     assert result.selected_agent == "github_agent"
     assert result.intent == "github_scan_repository"
     assert result.metadata["repo_full_name"] == "octo-org/demo-app"
+    assert result.metadata["trace_steps"][2]["actor"] == "GitHub Agent"
 
 
 def test_orchestration_agent_extracts_repo_and_overwrite_for_workflow_pr():
@@ -159,4 +165,6 @@ def test_orchestration_agent_returns_unknown_for_unmatched_message():
     assert result.risk_level == "low"
     assert result.success is False
     assert result.result == "I could not route this request to a specialized agent."
-    assert result.metadata == {}
+    assert result.metadata["trace_steps"][0]["actor"] == "User"
+    assert result.metadata["trace_steps"][1]["actor"] == "Orchestration Agent"
+    assert result.metadata["trace_steps"][1]["status"] == "failed"

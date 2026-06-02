@@ -101,6 +101,7 @@ async def orchestrate(
     )
     try:
         orchestrator = OrchestrationAgent()
+        prepared_task = orchestrator.prepare_task(task)
         approval_plan = orchestrator.approval_plan(task)
         if approval_plan:
             approval = await create_approval_request(
@@ -130,8 +131,8 @@ async def orchestrate(
                     "approval_details": approval_plan["details"],
                 },
             )
+            result = orchestrator.add_trace(result, prepared_task, "github")
         else:
-            prepared_task = orchestrator.prepare_task(task)
             github_handle_async = getattr(orchestrator.github_agent, "handle_async", None)
             is_async_github_route = (
                 orchestrator.route_task(prepared_task) == "github"
@@ -144,6 +145,7 @@ async def orchestrate(
                     db=db,
                     current_user=current_user,
                 )
+                result = orchestrator.add_trace(result, prepared_task, "github")
             else:
                 result = orchestrator.handle(task)
         try:

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from typing import Protocol
+from typing import Any, Protocol
 
 from app.agents.agent_types import AgentResult, AgentTask
 from app.agents.cicd_agent import CICDAgent
@@ -52,22 +52,22 @@ class OrchestrationAgent:
         route = self.route_task(prepared_task)
 
         if route == "cli":
-            return self.cli_agent.handle(prepared_task)
+            return self.add_trace(self.cli_agent.handle(prepared_task), prepared_task, route)
         if route == "cicd":
-            return self.cicd_agent.handle(prepared_task)
+            return self.add_trace(self.cicd_agent.handle(prepared_task), prepared_task, route)
         if route == "diagnosis":
-            return self.diagnosis_agent.handle(prepared_task)
+            return self.add_trace(self.diagnosis_agent.handle(prepared_task), prepared_task, route)
         if route == "github":
-            return self.github_agent.handle(prepared_task)
+            return self.add_trace(self.github_agent.handle(prepared_task), prepared_task, route)
 
-        return AgentResult(
+        return self.add_trace(AgentResult(
             selected_agent=self.name,
             intent="unknown",
             risk_level="low",
             success=False,
             result="I could not route this request to a specialized agent.",
             metadata={},
-        )
+        ), prepared_task, route)
 
     def prepare_task(self, task: AgentTask) -> AgentTask:
         """Return a task enriched with deterministic context extracted from the message."""
@@ -76,6 +76,61 @@ class OrchestrationAgent:
     def route_task(self, task: AgentTask) -> str:
         """Return the specialized-agent route for an already prepared task."""
         return self._route(task)
+
+    def add_trace(self, result: AgentResult, task: AgentTask, route: str) -> AgentResult:
+        """Attach deterministic trace steps while preserving the AgentResult shape."""
+        metadata = dict(result.metadata or {})
+        if isinstance(metadata.get("trace_steps"), list):
+            return result
+        metadata["trace_steps"] = self.build_trace(result, task, route)
+        return result.model_copy(update={"metadata": metadata})
+
+    def build_trace(self, result: AgentResult, task: AgentTask, route: str) -> list[dict[str, Any]]:
+        """Build a user-facing trace for the selected multi-agent path."""
+        outcome_status = self._result_status(result)
+        trace_steps: list[dict[str, Any]] = [
+            {
+                "step_number": 1,
+                "actor": "User",
+                "action": "Submitted request",
+                "status": "completed",
+                "details": {"message": task.message, "context_keys": sorted(task.context.keys())},
+            },
+            {
+                "step_number": 2,
+                "actor": "Orchestration Agent",
+                "action": self._orchestration_action(result, route),
+                "status": "completed" if route != "unknown" else "failed",
+                "details": {"selected_route": route, "intent": result.intent},
+            },
+        ]
+
+        if route != "unknown":
+            trace_steps.append(
+                {
+                    "step_number": 3,
+                    "actor": self._agent_display_name(route, result.selected_agent),
+                    "action": self._agent_action(route, result.intent),
+                    "status": outcome_status,
+                    "details": {
+                        "selected_agent": result.selected_agent,
+                        "risk_level": result.risk_level,
+                    },
+                }
+            )
+
+            tool_actor, tool_action, tool_details = self._tool_trace(route, result)
+            trace_steps.append(
+                {
+                    "step_number": 4,
+                    "actor": tool_actor,
+                    "action": tool_action,
+                    "status": outcome_status,
+                    "details": tool_details,
+                }
+            )
+
+        return trace_steps
 
     def _prepare_task(self, task: AgentTask) -> AgentTask:
         extracted = self._extract_context(task.message)
@@ -88,6 +143,106 @@ class OrchestrationAgent:
             session_id=task.session_id,
             context=merged_context,
         )
+
+    @staticmethod
+    def _result_status(result: AgentResult) -> str:
+        if bool((result.metadata or {}).get("approval_required")):
+            return "pending"
+        return "completed" if result.success else "failed"
+
+    @staticmethod
+    def _orchestration_action(result: AgentResult, route: str) -> str:
+        if route == "unknown":
+            return "Unable to detect supported intent"
+        return f"Detected {result.intent} intent"
+
+    @staticmethod
+    def _agent_display_name(route: str, fallback: str) -> str:
+        names = {
+            "cli": "CLI Agent",
+            "cicd": "CI/CD Agent",
+            "diagnosis": "Diagnosis Agent",
+            "github": "GitHub Agent",
+        }
+        return names.get(route, fallback)
+
+    @staticmethod
+    def _agent_action(route: str, intent: str) -> str:
+        actions = {
+            "cli": "Selected safe CLI/Docker operation",
+            "cicd": "Analyzed repository stack and CI/CD requirements",
+            "diagnosis": "Selected failure diagnosis workflow",
+            "github": "Selected GitHub repository workflow",
+        }
+        return actions.get(route, f"Handled {intent}")
+
+    @staticmethod
+    def _tool_trace(route: str, result: AgentResult) -> tuple[str, str, dict[str, Any]]:
+        metadata = result.metadata or {}
+        raw_tool = metadata.get("tool_called") or metadata.get("proposed_tool_call")
+        if isinstance(raw_tool, list):
+            tool_name = ", ".join(str(item) for item in raw_tool)
+        elif raw_tool:
+            tool_name = str(raw_tool)
+        else:
+            tool_name = OrchestrationAgent._default_tool_name(route, result.intent)
+
+        actor = {
+            "cli": "Docker Tool",
+            "cicd": "Workflow Generator Service" if "generate" in result.intent else "Repository Analyzer Service",
+            "diagnosis": "Failure Prediction Service",
+            "github": "GitHub Tool",
+        }.get(route, "Tool/Service")
+
+        action = {
+            "cli": OrchestrationAgent._cli_tool_action(result.intent),
+            "cicd": OrchestrationAgent._cicd_tool_action(result.intent),
+            "diagnosis": "Predicted failure class and prepared fix recommendation",
+            "github": OrchestrationAgent._github_tool_action(result.intent, metadata),
+        }.get(route, f"Called {tool_name}")
+
+        return actor, action, {"tool_or_service": tool_name}
+
+    @staticmethod
+    def _default_tool_name(route: str, intent: str) -> str:
+        defaults = {
+            "cli": "docker_tool",
+            "cicd": "workflow_generator" if "generate" in intent else "repo_analyzer",
+            "diagnosis": "failure_prediction_service",
+            "github": "github_tool",
+        }
+        return defaults.get(route, "tool_or_service")
+
+    @staticmethod
+    def _cli_tool_action(intent: str) -> str:
+        if intent == "docker_list_containers":
+            return "Listed running containers"
+        if intent == "docker_get_container_logs":
+            return "Read container logs"
+        return "Ran safe CLI tool"
+
+    @staticmethod
+    def _cicd_tool_action(intent: str) -> str:
+        if intent == "cicd_generate_workflow":
+            return "Generated GitHub Actions workflow YAML"
+        return "Detected repository stack"
+
+    @staticmethod
+    def _github_tool_action(intent: str, metadata: dict[str, Any]) -> str:
+        if metadata.get("approval_required"):
+            return "Prepared GitHub action for human approval"
+        actions = {
+            "github_scan_repository": "Scanned repository files",
+            "github_create_workflow_pr": "Created workflow pull request",
+            "github_list_workflows": "Listed GitHub Actions workflows",
+            "github_recent_runs": "Listed recent workflow runs",
+            "github_workflow_status": "Read workflow run status",
+            "github_download_workflow_logs": "Downloaded workflow logs",
+            "github_diagnose_workflow_run": "Downloaded logs and diagnosed workflow run",
+            "github_trigger_workflow": "Triggered GitHub Actions workflow",
+            "github_create_fix_pr": "Created fix pull request",
+        }
+        return actions.get(intent, "Called GitHub service")
 
     def _route(self, task: AgentTask) -> str:
         scores = self._scores(task)
