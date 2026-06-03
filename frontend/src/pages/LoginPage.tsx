@@ -121,14 +121,14 @@ export default function LoginPage() {
   const disabled = submitting || isLoading;
 
   return (
-    <div className="relative min-h-screen overflow-hidden app-bg">
+    <div className="screen-scroll relative app-bg">
       <div className="pointer-events-none absolute inset-0 app-gradient" />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary-400/60 to-transparent" />
-      <div className="absolute right-4 top-4 z-20 sm:right-6 sm:top-6">
+      <div className="fixed right-4 top-4 z-20 sm:right-6 sm:top-6">
         <ThemeToggle />
       </div>
 
-      <main className="relative grid min-h-screen grid-cols-1 lg:grid-cols-[1.05fr_0.95fr]">
+      <main className="relative grid min-h-full grid-cols-1 lg:grid-cols-[1.05fr_0.95fr]">
         <section className="hidden flex-col justify-between border-r border-surface-600/70 p-10 lg:flex">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-primary-500/30 bg-primary-500/10 shadow-glow">
@@ -181,7 +181,7 @@ export default function LoginPage() {
           </div>
         </section>
 
-        <section className="flex items-center justify-center px-4 py-16 sm:px-6 lg:px-10">
+        <section className="flex items-center justify-center px-4 py-10 sm:px-6 sm:py-14 lg:px-10">
           <div className="w-full max-w-lg">
             <div className="mb-8 text-center lg:hidden">
               <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-3xl border border-primary-500/30 bg-primary-500/10">

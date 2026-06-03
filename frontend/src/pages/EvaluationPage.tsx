@@ -1,17 +1,17 @@
 import { getDebugHint, getUserFriendlyError } from "@/lib/errorMessages";
 import { evaluationService, type EvaluationSummary } from "@/services/api";
 import {
-    Activity,
-    AlertCircle,
-    BarChart3,
-    CheckSquare,
-    ClipboardList,
-    Database,
-    GitPullRequest,
-    Loader2,
-    Percent,
-    Tags,
-    TriangleAlert,
+  Activity,
+  AlertCircle,
+  BarChart3,
+  CheckSquare,
+  ClipboardList,
+  Database,
+  GitPullRequest,
+  Loader2,
+  Percent,
+  Tags,
+  TriangleAlert,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -110,7 +110,7 @@ export default function EvaluationPage() {
 
   return (
     <div className="flex h-full flex-col bg-surface-900">
-      <div className="shrink-0 border-b border-surface-600 bg-surface-900/90 px-6 py-4 backdrop-blur">
+      <div className="shrink-0 border-b border-surface-600 bg-surface-900/90 px-4 py-4 backdrop-blur md:px-6">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-primary-500/30 bg-primary-500/10">
             <Activity

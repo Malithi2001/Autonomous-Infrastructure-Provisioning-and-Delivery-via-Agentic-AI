@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from "react";
 import {
   BrowserRouter,
+  HashRouter,
   Navigate,
   Route,
   Routes,
@@ -10,14 +11,22 @@ import { ShieldAlert } from "lucide-react";
 import Layout from "@/components/layout/Layout";
 import ChatPage from "@/pages/ChatPage";
 import ApprovalsPage from "@/pages/ApprovalsPage";
+import DashboardPage from "@/pages/DashboardPage";
 import DiagnosisPage from "@/pages/DiagnosisPage";
 import EvaluationPage from "@/pages/EvaluationPage";
 import ExecutionsPage from "@/pages/ExecutionsPage";
 import LoginPage from "@/pages/LoginPage";
 import MultiAgentPage from "@/pages/MultiAgentPage";
 import RepositorySetupPage from "@/pages/RepositorySetupPage";
+import SettingsPage from "@/pages/SettingsPage";
 import UsersPage from "@/pages/UsersPage";
 import WorkflowFailuresPage from "@/pages/WorkflowFailuresPage";
+import {
+  DESKTOP_HOME_PATH,
+  IS_AUTH_DISABLED,
+  IS_DESKTOP_MODE,
+  IS_MOBILE_MODE,
+} from "@/config/runtime";
 import { useAuthStore } from "@/store/authStore";
 import { useThemeStore } from "@/store/themeStore";
 import {
@@ -70,6 +79,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   const { isAuthenticated, isLoading } = useAuthStore();
   const location = useLocation();
 
+  if (IS_AUTH_DISABLED) return <>{children}</>;
   if (isLoading) return <AppLoader />;
   return isAuthenticated ? (
     <>{children}</>
@@ -81,6 +91,10 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 function RoleProtectedRoute({ children }: { children: ReactNode }) {
   const { user } = useAuthStore();
   const location = useLocation();
+  if ((IS_AUTH_DISABLED || IS_MOBILE_MODE) && location.pathname.startsWith("/users")) {
+    return <Navigate to={DESKTOP_HOME_PATH} replace />;
+  }
+  if (IS_AUTH_DISABLED) return <>{children}</>;
   return canAccessPath(user?.role, location.pathname) ? (
     <>{children}</>
   ) : (
@@ -93,6 +107,7 @@ function AppRoutes() {
   const location = useLocation();
 
   useEffect(() => {
+    if (IS_AUTH_DISABLED) return;
     const handleUnauthorized = () => markUnauthenticated();
     window.addEventListener("devops-auth:unauthorized", handleUnauthorized);
     return () =>
@@ -103,6 +118,10 @@ function AppRoutes() {
   }, [markUnauthenticated]);
 
   useEffect(() => {
+    if (IS_AUTH_DISABLED) {
+      checkAuth();
+      return;
+    }
     if (location.pathname === "/login") {
       markUnauthenticated();
       return;
@@ -112,7 +131,16 @@ function AppRoutes() {
 
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
+      <Route
+        path="/login"
+        element={
+          IS_AUTH_DISABLED ? (
+            <Navigate to={DESKTOP_HOME_PATH} replace />
+          ) : (
+            <LoginPage />
+          )
+        }
+      />
       <Route
         path="/"
         element={
@@ -121,7 +149,20 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<Navigate to="/chat" replace />} />
+        <Route
+          index
+          element={
+            <Navigate to={IS_AUTH_DISABLED ? DESKTOP_HOME_PATH : "/chat"} replace />
+          }
+        />
+        <Route
+          path="dashboard"
+          element={
+            <RoleProtectedRoute>
+              <DashboardPage />
+            </RoleProtectedRoute>
+          }
+        />
         <Route
           path="chat"
           element={
@@ -187,6 +228,14 @@ function AppRoutes() {
           }
         />
         <Route
+          path="settings"
+          element={
+            <RoleProtectedRoute>
+              <SettingsPage />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
           path="users"
           element={
             <RoleProtectedRoute>
@@ -201,6 +250,10 @@ function AppRoutes() {
 
 export default function App() {
   const { syncSystemTheme } = useThemeStore();
+  const Router =
+    IS_DESKTOP_MODE || window.location.protocol === "file:"
+      ? HashRouter
+      : BrowserRouter;
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -211,10 +264,10 @@ export default function App() {
   }, [syncSystemTheme]);
 
   return (
-    <BrowserRouter
+    <Router
       future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
     >
       <AppRoutes />
-    </BrowserRouter>
+    </Router>
   );
 }

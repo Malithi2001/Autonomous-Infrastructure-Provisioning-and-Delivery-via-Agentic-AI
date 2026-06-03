@@ -37,6 +37,14 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
     headline: "Production operations and approvals",
     permissions: [
       "agent:chat",
+      "cicd:read",
+      "cicd:generate",
+      "failures:predict",
+      "repositories:read",
+      "repositories:write",
+      "workflow_failures:read",
+      "workflow_failures:write",
+      "audit:read",
       "logs:read",
       "logs:write",
       "metrics:read",
@@ -61,9 +69,14 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
     headline: "Diagnostics and staging workflow",
     permissions: [
       "agent:chat",
-      "logs:read",
-      "metrics:read",
+      "agents:orchestrate",
+      "cicd:read",
+      "cicd:generate",
+      "failures:predict",
+      "repositories:read",
+      "workflow_failures:read",
       "executions:read",
+      "logs:read",
       "deployments:staging",
     ],
     badgeClass:
@@ -74,15 +87,9 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
     role: "viewer",
     label: "Viewer",
     description:
-      "Read-only observer for operational insight, logs, metrics, approvals, and execution history.",
+      "Read-only observer for safe AI chat without operational or approval access.",
     headline: "Read-only operational insight",
-    permissions: [
-      "agent:chat",
-      "approvals:read",
-      "logs:read",
-      "metrics:read",
-      "executions:read",
-    ],
+    permissions: ["agent:chat"],
     badgeClass:
       "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200",
     accentClass: "text-emerald-600 dark:text-emerald-300",
@@ -111,7 +118,7 @@ export const DEMO_CREDENTIALS: Record<
   viewer: {
     email: "viewer@company.example.com",
     password: "viewer123",
-    note: "View read-only operational insight and history.",
+    note: "Use safe AI chat without operational control-plane access.",
   },
 };
 
@@ -132,9 +139,9 @@ export const CHAT_SUGGESTIONS: Record<UserRole, string[]> = {
     "Explain recent execution failures.",
   ],
   viewer: [
-    "Summarize current system health.",
-    "Show recent execution history.",
-    "Explain the latest CI failure in plain language.",
+    "Explain what this DevOps assistant can help with.",
+    "Describe CI/CD failure diagnosis in plain language.",
+    "Summarize safe DevOps best practices.",
   ],
 };
 
@@ -158,25 +165,33 @@ export function hasPermission(
 }
 
 export function defaultPathForRole(role?: string | null): string {
-  return normalizeRole(role) === "admin" ? "/users" : "/chat";
+  return normalizeRole(role) === "admin" ? "/dashboard" : "/chat";
 }
 
 export function canAccessPath(
   role: string | null | undefined,
   path: string,
 ): boolean {
+  if (path.startsWith("/dashboard") || path.startsWith("/settings")) {
+    return Boolean(role);
+  }
   if (path.startsWith("/users")) return hasPermission(role, "users:manage");
-  if (path.startsWith("/diagnosis")) return hasPermission(role, "logs:read");
+  if (path.startsWith("/diagnosis"))
+    return (
+      hasPermission(role, "failures:predict") ||
+      hasPermission(role, "cicd:generate")
+    );
   if (path.startsWith("/repository-setup"))
-    return hasPermission(role, "executions:write");
+    return hasPermission(role, "repositories:write");
   if (path.startsWith("/workflow-failures"))
-    return hasPermission(role, "executions:read");
+    return hasPermission(role, "workflow_failures:read");
   if (path.startsWith("/approvals"))
     return hasPermission(role, "approvals:read");
   if (path.startsWith("/executions"))
     return hasPermission(role, "executions:read");
   if (path.startsWith("/evaluation")) return hasPermission(role, "metrics:read");
-  if (path.startsWith("/multi-agent")) return hasPermission(role, "agent:chat");
+  if (path.startsWith("/multi-agent"))
+    return hasPermission(role, "agents:orchestrate");
   if (path.startsWith("/chat") || path === "/")
     return hasPermission(role, "agent:chat");
   return false;

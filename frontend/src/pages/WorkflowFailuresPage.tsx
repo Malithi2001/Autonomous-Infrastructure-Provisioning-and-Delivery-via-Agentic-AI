@@ -1,24 +1,24 @@
 import { getDebugHint, getUserFriendlyError } from "@/lib/errorMessages";
 import { hasPermission } from "@/lib/rbac";
 import {
-    workflowFailureService,
-    type WorkflowFailure,
-    type WorkflowFailureFixPRResult,
+  workflowFailureService,
+  type WorkflowFailure,
+  type WorkflowFailureFixPRResult,
 } from "@/services/api";
 import { useAuthStore } from "@/store/authStore";
 import clsx from "clsx";
 import { formatDistanceToNow } from "date-fns";
 import {
-    AlertCircle,
-    ChevronDown,
-    ChevronRight,
-    ExternalLink,
-    GitBranch,
-    GitPullRequest,
-    Loader2,
-    RefreshCw,
-    ShieldCheck,
-    TriangleAlert,
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  GitBranch,
+  GitPullRequest,
+  Loader2,
+  RefreshCw,
+  ShieldCheck,
+  TriangleAlert,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -90,7 +90,7 @@ function FailureDetails({
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-subtle">
             Log Excerpt
           </p>
-          <pre className="mt-2 max-h-56 overflow-auto rounded-xl border border-surface-600 bg-surface-950 p-3 text-xs leading-5 text-ink">
+          <pre className="mt-2 max-h-56 max-w-full overflow-auto rounded-xl border border-surface-600 bg-surface-950 p-3 text-xs leading-5 text-ink">
             <code>{failure.log_excerpt || "No log excerpt stored."}</code>
           </pre>
         </div>
@@ -135,7 +135,7 @@ function FailureDetails({
                       type="button"
                       onClick={onCreateFixPr}
                       disabled={creating}
-                      className="btn-primary inline-flex items-center gap-2"
+                      className="btn-primary w-full sm:w-auto"
                     >
                       {creating ? (
                         <Loader2 size={15} className="animate-spin" />
@@ -209,13 +209,13 @@ function FailureRow({
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="truncate text-sm font-semibold text-ink">
-              {failure.repo_full_name}
-            </p>
+              <p className="min-w-0 break-words text-sm font-semibold text-ink sm:truncate">
+                {failure.repo_full_name}
+              </p>
             {statusBadge(failure.status)}
             {labelBadge(failure.predicted_label)}
           </div>
-          <div className="mt-2 grid gap-2 text-xs text-ink-subtle md:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-2 grid gap-2 text-xs text-ink-subtle sm:grid-cols-2 xl:grid-cols-4">
             <span className="truncate">
               Workflow:{" "}
               <span className="text-ink">
@@ -286,7 +286,7 @@ export default function WorkflowFailuresPage() {
   const [actionResults, setActionResults] = useState<
     Record<string, WorkflowFailureFixPRResult>
   >({});
-  const canCreateFixPr = hasPermission(user?.role, "executions:write");
+  const canCreateFixPr = hasPermission(user?.role, "workflow_failures:write");
 
   const fetchFailures = () => {
     let mounted = true;
@@ -345,7 +345,7 @@ export default function WorkflowFailuresPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-surface-600 bg-surface-900/80 px-4 py-4 md:px-6">
+      <div className="shrink-0 border-b border-surface-600 bg-surface-900/80 px-4 py-4 md:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-red-500/30 bg-red-500/10">
@@ -367,7 +367,7 @@ export default function WorkflowFailuresPage() {
             type="button"
             onClick={fetchFailures}
             disabled={loading}
-            className="btn-ghost inline-flex items-center gap-2"
+            className="btn-ghost border border-surface-600"
           >
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />{" "}
             Refresh

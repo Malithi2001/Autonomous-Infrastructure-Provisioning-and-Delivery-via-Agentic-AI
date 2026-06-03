@@ -1,21 +1,21 @@
 import { getDebugHint, getUserFriendlyError } from "@/lib/errorMessages";
 import {
-    agentService,
-    type AgentOrchestrationResult,
-    type AgentTraceStep,
+  agentService,
+  type AgentOrchestrationResult,
+  type AgentTraceStep,
 } from "@/services/api";
 import {
-    AlertCircle,
-    Bot,
-    Braces,
-    CheckCircle2,
-    Circle,
-    Loader2,
-    Network,
-    Play,
-    Route,
-    ShieldAlert,
-    Sparkles,
+  AlertCircle,
+  Bot,
+  Braces,
+  CheckCircle2,
+  Circle,
+  Loader2,
+  Network,
+  Play,
+  Route,
+  ShieldAlert,
+  Sparkles,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -170,7 +170,7 @@ function ResultPanel({ result }: { result: AgentOrchestrationResult }) {
           <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-ink">
             Metadata JSON
           </summary>
-          <pre className="max-h-96 overflow-auto border-t border-surface-600 p-4 text-xs leading-5 text-ink">
+          <pre className="max-h-96 max-w-full overflow-auto border-t border-surface-600 p-4 text-xs leading-5 text-ink">
             <code>{formatJson(result.metadata)}</code>
           </pre>
         </details>
@@ -192,7 +192,7 @@ function TraceDetails({ details }: { details: AgentTraceStep["details"] }) {
     return <p className="mt-1 text-xs text-ink-subtle">{details}</p>;
   }
   return (
-    <pre className="mt-2 max-h-28 overflow-auto rounded-xl border border-surface-600 bg-surface-950 p-3 text-xs leading-5 text-ink-subtle">
+    <pre className="mt-2 max-h-28 max-w-full overflow-auto rounded-xl border border-surface-600 bg-surface-950 p-3 text-xs leading-5 text-ink-subtle">
       <code>{formatJson(details)}</code>
     </pre>
   );
@@ -286,7 +286,7 @@ export default function MultiAgentPage() {
 
   return (
     <div className="flex h-full flex-col bg-surface-900">
-      <div className="shrink-0 border-b border-surface-600 bg-surface-900/90 px-6 py-4 backdrop-blur">
+      <div className="shrink-0 border-b border-surface-600 bg-surface-900/90 px-4 py-4 backdrop-blur md:px-6">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-primary-500/30 bg-primary-500/10">
             <Network
@@ -321,7 +321,7 @@ export default function MultiAgentPage() {
               </div>
             </div>
 
-            <div className="space-y-5 p-5">
+            <div className="space-y-5 p-4 sm:p-5">
               <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
                 <div>
                   <label
@@ -356,12 +356,12 @@ export default function MultiAgentPage() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                 <button
                   type="button"
                   onClick={runAgent}
                   disabled={!message.trim() || loading}
-                  className="btn-primary inline-flex items-center gap-2"
+                  className="btn-primary w-full sm:w-auto"
                 >
                   {loading ? (
                     <Loader2 size={15} className="animate-spin" />
@@ -413,7 +413,7 @@ export default function MultiAgentPage() {
                   key={demo.label}
                   type="button"
                   onClick={() => applyDemo(demo)}
-                  className="rounded-2xl border border-surface-600 bg-surface-900/70 p-4 text-left text-sm font-medium text-ink transition hover:border-primary-500/40 hover:bg-primary-500/10"
+                  className="rounded-2xl border border-surface-600 bg-surface-900/70 p-3 text-left text-sm font-medium text-ink transition hover:border-primary-500/40 hover:bg-primary-500/10 sm:p-4"
                 >
                   <Bot
                     size={16}
@@ -426,6 +426,21 @@ export default function MultiAgentPage() {
           </section>
 
           {result && <ResultPanel result={result} />}
+          {!result && !loading && !error && (
+            <section className="card p-8 text-center">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-surface-600 bg-surface-900">
+                <Network
+                  size={22}
+                  className="text-primary-600 dark:text-primary-300"
+                />
+              </div>
+              <p className="font-medium text-ink">Ready to run an agent flow</p>
+              <p className="mt-2 text-sm text-ink-subtle">
+                Choose a quick demo or enter your own command to see intent,
+                selected agent, risk, tool call, and trace steps.
+              </p>
+            </section>
+          )}
         </div>
       </div>
     </div>

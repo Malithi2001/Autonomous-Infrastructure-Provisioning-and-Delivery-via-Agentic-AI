@@ -61,6 +61,7 @@ Main screens:
 | Page | Purpose |
 | --- | --- |
 | `LoginPage.tsx` | User login and session creation. |
+| `DashboardPage.tsx` | Overview screen for demo status and navigation. |
 | `ChatPage.tsx` | Legacy chat agent interface. |
 | `MultiAgentPage.tsx` | Deterministic multi-agent supervisor demo. |
 | `DiagnosisPage.tsx` | Paste CI/CD logs and receive failure prediction. |
@@ -68,6 +69,8 @@ Main screens:
 | `WorkflowFailuresPage.tsx` | View failed GitHub Actions diagnoses and create fix PRs. |
 | `ApprovalsPage.tsx` | Review and decide pending human approvals. |
 | `ExecutionsPage.tsx` | Audit trail and execution history. |
+| `EvaluationPage.tsx` | Project evaluation metrics and presentation support. |
+| `SettingsPage.tsx` | Runtime settings such as API base URL for packaged clients. |
 | `UsersPage.tsx` | Admin user management. |
 
 Important frontend modules:
@@ -268,7 +271,7 @@ flowchart TB
     Redis --> Flower[Flower Monitor]
 ```
 
-The project can run locally with SQLite or in a container topology with backend, frontend, PostgreSQL, Redis, Celery worker, and Flower.
+The project can run locally with SQLite or in a container topology with backend, frontend, PostgreSQL, Redis, Celery worker, and Flower. Electron desktop and Capacitor Android builds package the frontend experience, but both still depend on a reachable backend API.
 
 ## 13. Known Boundaries
 

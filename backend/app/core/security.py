@@ -58,6 +58,8 @@ PUBLIC_SIGNUP_ROLES: set[UserRole] = {UserRole.DEVELOPER, UserRole.VIEWER}
 ROLE_PERMISSIONS: dict[UserRole, list[str]] = {
     UserRole.VIEWER: [
         "agent:chat",
+        "approvals:read",
+        "executions:read",
     ],
     UserRole.DEVELOPER: [
         "agent:chat",
@@ -67,6 +69,7 @@ ROLE_PERMISSIONS: dict[UserRole, list[str]] = {
         "failures:predict",
         "repositories:read",
         "workflow_failures:read",
+        "executions:read",
         "logs:read",
         "deployments:staging",
     ],

@@ -1,8 +1,8 @@
 import { getDebugHint, getUserFriendlyError } from "@/lib/errorMessages";
 import {
-    cicdAssistantService,
-    type DetectedStack,
-    type FailurePrediction,
+  cicdAssistantService,
+  type DetectedStack,
+  type FailurePrediction,
 } from "@/services/api";
 import { AlertCircle, FileCode2, Loader2, Sparkles, Wand2 } from "lucide-react";
 import { useState } from "react";
@@ -17,6 +17,31 @@ package-lock.json
 src/App.tsx
 vite.config.ts
 Dockerfile`;
+
+const sampleLogs = [
+  {
+    label: "npm missing test script",
+    value: `npm ERR! Missing script: "test"
+npm ERR! To see a list of scripts, run:
+npm ERR!   npm run`,
+  },
+  {
+    label: "npm missing lockfile",
+    value: "npm ERR! package-lock.json is required for reproducible installs when running npm ci.",
+  },
+  {
+    label: "Python missing dependency",
+    value: "ModuleNotFoundError: No module named 'pydantic_settings' while loading app.core.config",
+  },
+  {
+    label: "pytest not found",
+    value: "Run pytest -q failed: /usr/bin/bash: pytest: command not found",
+  },
+  {
+    label: "Docker build failed",
+    value: "Docker build failed: COPY requirements.txt /app/requirements.txt no such file or directory",
+  },
+];
 
 function formatConfidence(value: number | null) {
   if (value === null || Number.isNaN(value)) return "Not available";
@@ -91,7 +116,7 @@ export default function DiagnosisPage() {
 
   return (
     <div className="flex h-full flex-col bg-surface-900">
-      <div className="shrink-0 border-b border-surface-600 bg-surface-900/90 px-6 py-4 backdrop-blur">
+      <div className="shrink-0 border-b border-surface-600 bg-surface-900/90 px-4 py-4 backdrop-blur md:px-6">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-primary-500/30 bg-primary-500/10">
             <Sparkles
@@ -127,18 +152,34 @@ export default function DiagnosisPage() {
                 Paste a CI/CD error log and predict the likely failure type.
               </p>
             </div>
-            <div className="space-y-4 p-5">
+            <div className="space-y-4 p-4 sm:p-5">
               <textarea
                 value={logText}
                 onChange={(event) => setLogText(event.target.value)}
                 className="input-field min-h-48 resize-y p-3 font-mono text-xs leading-5"
                 placeholder="Paste CI/CD log text here"
               />
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap gap-2">
+                {sampleLogs.map((sample) => (
+                  <button
+                    key={sample.label}
+                    type="button"
+                    onClick={() => {
+                      setLogText(sample.value);
+                      setPrediction(null);
+                      setPredictionError("");
+                    }}
+                    className="btn-ghost border border-surface-600 bg-surface-900/70"
+                  >
+                    {sample.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                 <button
                   onClick={predictFailure}
                   disabled={!logText.trim() || predicting}
-                  className="btn-primary inline-flex items-center gap-2"
+                  className="btn-primary w-full sm:w-auto"
                 >
                   {predicting ? (
                     <Loader2 size={15} className="animate-spin" />
@@ -165,26 +206,24 @@ export default function DiagnosisPage() {
               </div>
 
               {prediction && (
-                <div className="rounded-2xl border border-surface-600 bg-surface-900/70 p-4">
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.16em] text-ink-subtle">
-                        Label
-                      </p>
-                      <p className="mt-1 font-mono text-sm font-semibold text-ink">
-                        {prediction.label}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.16em] text-ink-subtle">
-                        Confidence
-                      </p>
-                      <p className="mt-1 text-sm font-semibold text-ink">
-                        {formatConfidence(prediction.confidence)}
-                      </p>
-                    </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-surface-600 bg-surface-900/70 p-4">
+                    <p className="text-xs uppercase tracking-[0.16em] text-ink-subtle">
+                      Label
+                    </p>
+                    <p className="mt-1 font-mono text-sm font-semibold text-ink">
+                      {prediction.label}
+                    </p>
                   </div>
-                  <div className="mt-4 border-t border-surface-600 pt-4">
+                  <div className="rounded-2xl border border-surface-600 bg-surface-900/70 p-4">
+                    <p className="text-xs uppercase tracking-[0.16em] text-ink-subtle">
+                      Confidence
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-ink">
+                      {formatConfidence(prediction.confidence)}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-surface-600 bg-surface-900/70 p-4 sm:col-span-2">
                     <p className="text-xs uppercase tracking-[0.16em] text-ink-subtle">
                       Suggested Fix
                     </p>
@@ -192,6 +231,18 @@ export default function DiagnosisPage() {
                       {prediction.suggested_fix}
                     </p>
                   </div>
+                  {prediction.recommendation &&
+                    typeof prediction.recommendation.risk_level ===
+                      "string" && (
+                      <div className="rounded-2xl border border-surface-600 bg-surface-900/70 p-4 sm:col-span-2">
+                        <p className="text-xs uppercase tracking-[0.16em] text-ink-subtle">
+                          Risk Level
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-ink">
+                          {prediction.recommendation.risk_level}
+                        </p>
+                      </div>
+                    )}
                 </div>
               )}
             </div>
@@ -213,18 +264,18 @@ export default function DiagnosisPage() {
                 YAML.
               </p>
             </div>
-            <div className="space-y-4 p-5">
+            <div className="space-y-4 p-4 sm:p-5">
               <textarea
                 value={fileList}
                 onChange={(event) => setFileList(event.target.value)}
                 className="input-field min-h-48 resize-y p-3 font-mono text-xs leading-5"
                 placeholder={"package.json\nsrc/App.tsx\nDockerfile"}
               />
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                 <button
                   onClick={generateWorkflow}
                   disabled={!fileList.trim() || generating}
-                  className="btn-primary inline-flex items-center gap-2"
+                  className="btn-primary w-full sm:w-auto"
                 >
                   {generating ? (
                     <Loader2 size={15} className="animate-spin" />
@@ -270,7 +321,7 @@ export default function DiagnosisPage() {
               )}
 
               {workflowYaml && (
-                <pre className="max-h-96 overflow-auto rounded-2xl border border-surface-600 bg-surface-950 p-4 text-xs leading-5 text-ink">
+                <pre className="max-h-96 max-w-full overflow-auto rounded-2xl border border-surface-600 bg-surface-950 p-4 text-xs leading-5 text-ink">
                   <code>{workflowYaml}</code>
                 </pre>
               )}

@@ -21,7 +21,7 @@ export function ChatEmptyState({
   disabled,
 }: ChatEmptyStateProps) {
   return (
-    <div className="flex h-full flex-col items-center justify-center px-4 py-10 text-center">
+    <div className="flex min-h-full flex-col items-center justify-center px-3 py-8 text-center sm:px-4 sm:py-10">
       <div className="relative mb-7">
         <div className="absolute inset-0 rounded-3xl bg-primary-500/20 blur-2xl" />
         <div className="relative flex h-16 w-16 items-center justify-center rounded-3xl border border-primary-500/30 bg-primary-500/10 shadow-glow">
@@ -32,7 +32,7 @@ export function ChatEmptyState({
         <p className="mb-3 text-xs font-semibold uppercase tracking-[0.3em] text-primary-700 dark:text-primary-300">
           Agentic DevOps Console
         </p>
-        <h2 className="text-2xl font-semibold text-ink">
+        <h2 className="text-xl font-semibold text-ink sm:text-2xl">
           What infrastructure task should we tackle?
         </h2>
         <p className="mt-3 text-sm leading-6 text-ink-muted">
@@ -41,7 +41,7 @@ export function ChatEmptyState({
           with approval gates.
         </p>
       </div>
-      <div className="mt-8 grid w-full max-w-3xl grid-cols-1 gap-3 md:grid-cols-2">
+      <div className="mt-7 grid w-full max-w-3xl grid-cols-1 gap-3 md:grid-cols-2">
         {suggestions.map((suggestion, index) => {
           const Icon = icons[index % icons.length];
           return (
@@ -49,7 +49,7 @@ export function ChatEmptyState({
               key={suggestion}
               onClick={() => onSuggestion(suggestion)}
               disabled={disabled}
-              className="group rounded-2xl border border-surface-600 bg-surface-800/75 p-4 text-left shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary-500/50 hover:bg-surface-700/80 disabled:cursor-not-allowed disabled:opacity-60"
+              className="group rounded-2xl border border-surface-600 bg-surface-800/75 p-3 text-left shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary-500/50 hover:bg-surface-700/80 disabled:cursor-not-allowed disabled:opacity-60 sm:p-4"
             >
               <div className="flex items-start gap-3">
                 <div className="rounded-xl border border-surface-600 bg-surface-900 p-2 text-primary-600 transition-colors group-hover:border-primary-500/50 dark:text-primary-300">

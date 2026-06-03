@@ -9,7 +9,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.database import ensure_default_users, get_db
 from app.core.logging import logger
 from app.core.security import (
     ACCESS_TOKEN_COOKIE_NAME,
@@ -252,6 +252,11 @@ async def login(request: Request, response: Response, db: AsyncSession = Depends
 
     if not identifier or not password:
         raise HTTPException(status_code=422, detail="Email/username and password are required.")
+
+    if settings.ENVIRONMENT.strip().lower() not in {"production", "prod", "release"}:
+        created, updated = await ensure_default_users(db)
+        if created or updated:
+            await db.commit()
 
     result = await db.execute(select(User).where(or_(User.email == identifier, User.username == identifier)))
     user = result.scalar_one_or_none()
