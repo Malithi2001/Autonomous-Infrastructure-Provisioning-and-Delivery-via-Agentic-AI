@@ -4,15 +4,18 @@ This guide explains deployment architecture and environment requirements. It is 
 
 ## 1. Deployment Modes
 
-The project supports three practical modes:
+The project supports four practical modes:
 
 | Mode | Use case | Database |
 | --- | --- | --- |
 | Local lightweight | Fast demo and development | SQLite |
 | Local full stack | Demo with containers, Redis, worker, database | PostgreSQL through Docker Compose |
 | Hosted backend/frontend | More realistic deployment | PostgreSQL or Supabase-compatible database |
+| Windows desktop | Local single-user app with no login screen | SQLite or configured backend DB |
 
 The core CI/CD features do not require Docker. Docker Compose is only a convenient way to run the full app stack together.
+
+Web mode keeps login, JWT cookies, RBAC, approvals, and audit logging. Desktop mode sets `DESKTOP_MODE=true` and `DISABLE_AUTH=true`, opens as `Desktop User`, hides Users & Roles and Sign out, bypasses JWT/RBAC for local use, and keeps audit records under `desktop_user`.
 
 The repository deploy workflow is optional. If AWS and EC2 secrets are not configured, the workflow records a skipped deployment and exits successfully so ordinary CI does not fail.
 
@@ -57,6 +60,8 @@ Backend:
 | `ALLOWED_ORIGINS` | Comma-separated or JSON list of frontend origins. |
 | `COOKIE_SECURE` | Should be true behind HTTPS. |
 | `COOKIE_SAMESITE` | `lax`, `strict`, or `none`. |
+| `DESKTOP_MODE` | Enables local desktop behavior when true. Defaults to false. |
+| `DISABLE_AUTH` | Bypasses JWT/RBAC when true. Defaults to false. |
 | `REDIS_URL` | Redis URL for memory/task support. |
 | `CELERY_BROKER_URL` | Celery broker URL. Falls back to Redis URL if configured by compose. |
 | `CELERY_RESULT_BACKEND` | Celery result backend. |
@@ -74,6 +79,25 @@ Frontend:
 | Variable | Purpose |
 | --- | --- |
 | `VITE_API_BASE_URL` | Backend base URL. |
+| `VITE_DESKTOP_MODE` | Opens the frontend without login and displays Desktop User when true. |
+| `VITE_MOBILE_MODE` | Enables mobile packaging behavior for Capacitor builds. |
+| `VITE_DISABLE_AUTH` | Frontend-side auth bypass flag for local packaged demos only. |
+
+Desktop production frontend env:
+
+```bash
+VITE_DESKTOP_MODE=true
+VITE_API_BASE_URL=http://127.0.0.1:8000
+```
+
+Backend desktop env:
+
+```bash
+DESKTOP_MODE=true
+DISABLE_AUTH=true
+```
+
+Mobile builds should set `VITE_API_BASE_URL` to a backend URL the device can reach, such as a LAN IP or public HTTPS tunnel. The backend does not run inside the Android app.
 
 ## 4. GitHub App Requirements
 
@@ -102,6 +126,41 @@ https://your-backend-domain/api/v1/webhooks/github
 Localhost is not publicly reachable by GitHub. For local webhook testing, expose the backend through a secure tunnel and use that public URL.
 
 Use [GitHub End-to-End Checklist](GITHUB_E2E_CHECKLIST.md) to verify the full repository scan, approval, pull request, webhook, and diagnosis loop.
+
+## 4.1 Windows Desktop Build
+
+Recommended easy setup from PowerShell:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\desktop\setup-windows.ps1
+```
+
+This installs backend, frontend, and Electron dependencies, builds the desktop frontend, packages the backend executable, and creates a Windows installer in `desktop\dist`.
+
+Run from source after setup:
+
+```powershell
+.\desktop\run-desktop.ps1
+```
+
+Manual developer build:
+
+```bash
+make setup
+make build-frontend
+make build-backend-exe
+make desktop-check
+make desktop-build-win
+```
+
+Run the local development shell with:
+
+```bash
+make desktop-dev
+```
+
+Docker tools require Docker Desktop running on the same machine. GitHub token values must stay in backend environment variables and should never be stored in frontend `.env` files.
 
 ## 5. Database Notes
 

@@ -38,7 +38,7 @@ export function ChatComposer({
   return (
     <form
       onSubmit={handleSubmit}
-      className="border-t border-surface-600/80 bg-surface-900/85 px-4 py-4 backdrop-blur xl:px-6"
+      className="shrink-0 border-t border-surface-600/80 bg-surface-900/85 px-3 py-3 backdrop-blur sm:px-4 sm:py-4 xl:px-6"
     >
       <div className="mx-auto flex max-w-5xl items-end gap-3 rounded-2xl border border-surface-600 bg-surface-800/90 p-2 shadow-panel focus-within:border-primary-500/70">
         <textarea
@@ -61,7 +61,7 @@ export function ChatComposer({
           <SendHorizonal size={17} />
         </button>
       </div>
-      <p className="mt-2 text-center text-xs text-ink-faint">
+      <p className="mt-2 hidden text-center text-xs text-ink-faint sm:block">
         High-risk infrastructure changes stay behind human approval controls.
       </p>
     </form>

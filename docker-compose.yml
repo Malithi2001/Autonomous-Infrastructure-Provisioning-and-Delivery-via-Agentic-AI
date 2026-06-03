@@ -131,7 +131,7 @@ services:
       dockerfile: Dockerfile
       target: production
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
     container_name: devops_assistant_frontend
     restart: unless-stopped
     ports:

@@ -1,7 +1,15 @@
 import { getDebugHint, getUserFriendlyError } from "@/lib/errorMessages";
 import { executionService } from "@/services/api";
 import { formatDistanceToNow } from "date-fns";
-import { Activity, AlertCircle, CheckCircle, Clock, Loader, X, XCircle } from "lucide-react";
+import {
+  Activity,
+  AlertCircle,
+  CheckCircle,
+  Clock,
+  Loader,
+  X,
+  XCircle,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 
 interface Execution {
@@ -123,8 +131,8 @@ export default function ExecutionsPage() {
 
   return (
     <div className="flex h-full flex-col bg-surface-900">
-      <div className="shrink-0 border-b border-surface-600 bg-surface-900/90 px-6 py-4 backdrop-blur">
-        <div className="flex items-center gap-3 mb-4">
+      <div className="shrink-0 border-b border-surface-600 bg-surface-900/90 px-4 py-4 backdrop-blur md:px-6">
+        <div className="mb-4 flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-blue-500/30 bg-blue-500/10">
             <Activity size={19} className="text-blue-600 dark:text-blue-300" />
           </div>
@@ -137,13 +145,13 @@ export default function ExecutionsPage() {
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap gap-3 items-center">
+        <div className="grid gap-3 sm:grid-cols-2 xl:flex xl:flex-wrap xl:items-center">
           <select
             value={filters.tool || ""}
             onChange={(e) =>
               setFilters({ ...filters, tool: e.target.value || null })
             }
-            className="text-sm px-2 py-1 rounded border border-surface-600 bg-surface-800 text-ink"
+            className="input-field min-h-10 px-3 py-2 xl:w-auto"
           >
             <option value="">All Tools</option>
             {TOOL_OPTIONS.map((tool) => (
@@ -158,7 +166,7 @@ export default function ExecutionsPage() {
             onChange={(e) =>
               setFilters({ ...filters, status: e.target.value || null })
             }
-            className="text-sm px-2 py-1 rounded border border-surface-600 bg-surface-800 text-ink"
+            className="input-field min-h-10 px-3 py-2 xl:w-auto"
           >
             <option value="">All Status</option>
             {STATUS_OPTIONS.map((status) => (
@@ -173,7 +181,7 @@ export default function ExecutionsPage() {
             onChange={(e) =>
               setFilters({ ...filters, days: parseInt(e.target.value) })
             }
-            className="text-sm px-2 py-1 rounded border border-surface-600 bg-surface-800 text-ink"
+            className="input-field min-h-10 px-3 py-2 xl:w-auto"
           >
             <option value="1">Last 24 hours</option>
             <option value="7">Last 7 days</option>
@@ -183,7 +191,7 @@ export default function ExecutionsPage() {
           {hasActiveFilters && (
             <button
               onClick={handleClearFilters}
-              className="text-sm px-2 py-1 rounded border border-surface-600 bg-surface-800 text-ink-subtle hover:text-ink flex items-center gap-1"
+              className="btn-ghost min-h-10 border border-surface-600"
             >
               <X size={14} />
               Clear
@@ -192,7 +200,7 @@ export default function ExecutionsPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-6">
+      <div className="flex-1 overflow-y-auto px-4 py-5 md:px-6 md:py-6">
         {loading ? (
           <div className="flex h-32 items-center justify-center">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
@@ -226,32 +234,34 @@ export default function ExecutionsPage() {
             {executions.map((ex) => (
               <div
                 key={ex.id}
-                className="card flex flex-col gap-2 px-4 py-3 transition-colors hover:border-primary-500/30"
+                className="card flex flex-col gap-3 px-4 py-3 transition-colors hover:border-primary-500/30"
               >
-                <div className="flex items-center gap-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                   <div className="shrink-0">{statusIcon(ex.status)}</div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-ink">
+                    <p className="break-words text-sm font-medium text-ink sm:truncate">
                       {ex.summary}
                     </p>
-                    <p className="mt-0.5 text-xs text-ink-subtle">
+                    <p className="mt-0.5 flex flex-wrap gap-x-2 gap-y-1 text-xs text-ink-subtle">
                       {ex.source && (
-                        <span className="mr-2 font-mono text-primary-700 dark:text-primary-300">
+                        <span className="break-all font-mono text-primary-700 dark:text-primary-300">
                           {ex.source}
                         </span>
                       )}
                       {ex.tool_name && (
-                        <span className="mr-2 font-mono text-ink-subtle">
+                        <span className="break-all font-mono text-ink-subtle">
                           {ex.tool_name}
                         </span>
                       )}
-                      {relativeTime(ex.started_at)}
+                      <span>{relativeTime(ex.started_at)}</span>
                     </p>
                   </div>
-                  <div className="shrink-0">{statusBadge(ex.status)}</div>
+                  <div className="shrink-0 sm:self-center">
+                    {statusBadge(ex.status)}
+                  </div>
                 </div>
                 {ex.requested_by && (
-                  <p className="text-xs text-ink-subtle ml-8">
+                  <p className="text-xs text-ink-subtle sm:ml-8">
                     By: {ex.requested_by}
                   </p>
                 )}

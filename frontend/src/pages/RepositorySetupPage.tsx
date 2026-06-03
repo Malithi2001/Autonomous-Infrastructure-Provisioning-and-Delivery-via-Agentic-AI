@@ -1,8 +1,8 @@
 import { getDebugHint, getUserFriendlyError } from "@/lib/errorMessages";
 import {
-    repositoryService,
-    type RepositoryScanResult,
-    type WorkflowPRResult,
+  repositoryService,
+  type RepositoryScanResult,
+  type WorkflowPRResult,
 } from "@/services/api";
 import {
     AlertCircle,
@@ -234,7 +234,7 @@ export default function RepositorySetupPage() {
 
   return (
     <div className="flex h-full flex-col bg-surface-900">
-      <div className="shrink-0 border-b border-surface-600 bg-surface-900/90 px-6 py-4 backdrop-blur">
+      <div className="shrink-0 border-b border-surface-600 bg-surface-900/90 px-4 py-4 backdrop-blur md:px-6">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-primary-500/30 bg-primary-500/10">
             <GitPullRequest
@@ -268,13 +268,13 @@ export default function RepositorySetupPage() {
                 value={repoFullName}
                 onChange={(event) => setRepoFullName(event.target.value)}
                 className="input-field flex-1"
-                placeholder="owner/repo"
+                placeholder="owner/repository"
               />
               <button
                 type="button"
                 onClick={scanRepository}
                 disabled={!normalizedRepo || scanning}
-                className="btn-primary inline-flex items-center justify-center gap-2"
+                className="btn-primary min-h-11 w-full sm:w-auto"
               >
                 {scanning ? (
                   <Loader2 size={15} className="animate-spin" />
@@ -284,6 +284,11 @@ export default function RepositorySetupPage() {
                 Scan Repository
               </button>
             </div>
+            <p className="mt-3 text-xs leading-5 text-ink-subtle">
+              GitHub scanning and pull request creation require a backend
+              GITHUB_TOKEN or GitHub App credentials. Token values stay in the
+              backend environment and are never shown here.
+            </p>
             {error && (
               <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200">
                 <div className="flex items-start gap-2">
@@ -307,12 +312,12 @@ export default function RepositorySetupPage() {
                 <StackPanel result={scanResult} />
                 <ReadinessPanel result={scanResult} />
               </div>
-              <div className="mt-5 flex flex-wrap items-center gap-3">
+              <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                 <button
                   type="button"
                   onClick={createWorkflowPr}
                   disabled={!normalizedRepo || creatingPr}
-                  className="btn-primary inline-flex items-center gap-2"
+                  className="btn-primary w-full sm:w-auto"
                 >
                   {creatingPr ? (
                     <Loader2 size={15} className="animate-spin" />
@@ -378,13 +383,21 @@ export default function RepositorySetupPage() {
                       {prResult.message}
                     </p>
                   )}
+                  {prResult.workflow_path && (
+                    <p className="mt-3 text-sm text-ink-subtle">
+                      Generated workflow path:{" "}
+                      <span className="font-mono text-ink">
+                        {prResult.workflow_path}
+                      </span>
+                    </p>
+                  )}
                 </div>
                 {prResult.pull_request_url && (
                   <a
                     href={prResult.pull_request_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="btn-secondary inline-flex items-center gap-2"
+                    className="btn-secondary w-full sm:w-auto"
                   >
                     Open PR <ExternalLink size={15} />
                   </a>

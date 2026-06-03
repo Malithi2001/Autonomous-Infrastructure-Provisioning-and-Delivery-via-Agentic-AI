@@ -1,14 +1,68 @@
 import axios from "axios";
+import { IS_AUTH_DISABLED } from "@/config/runtime";
 import type { RoleProfile, User, UserRole } from "@/types";
 import { normalizeRole } from "@/lib/rbac";
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-export const API_BASE_URL = BASE_URL.replace(/\/$/, "");
+export const BACKEND_URL_STORAGE_KEY = "smart_devops_backend_url";
+
+function safeLocalStorageGet(key: string): string {
+  try {
+    return window.localStorage.getItem(key) || "";
+  } catch {
+    return "";
+  }
+}
+
+function safeLocalStorageSet(key: string, value: string): void {
+  try {
+    if (value) window.localStorage.setItem(key, value);
+    else window.localStorage.removeItem(key);
+  } catch {
+    // Ignore storage failures in restricted webviews.
+  }
+}
+
+export function normalizeBackendUrl(value: string): string {
+  return value.trim().replace(/\/+$/, "");
+}
+
+export function getApiBaseUrl(): string {
+  const stored = safeLocalStorageGet(BACKEND_URL_STORAGE_KEY);
+  const envValue = String(import.meta.env.VITE_API_BASE_URL || "").trim();
+  return normalizeBackendUrl(stored || envValue || "http://127.0.0.1:8000");
+}
+
+export function setStoredBackendUrl(value: string): string {
+  const normalized = normalizeBackendUrl(value);
+  safeLocalStorageSet(BACKEND_URL_STORAGE_KEY, normalized);
+  api.defaults.baseURL = `${getApiBaseUrl()}/api/v1`;
+  return normalized;
+}
+
+export function clearStoredBackendUrl(): void {
+  safeLocalStorageSet(BACKEND_URL_STORAGE_KEY, "");
+  api.defaults.baseURL = `${getApiBaseUrl()}/api/v1`;
+}
+
+export const API_BASE_URL = getApiBaseUrl();
+
+let inMemoryAccessToken: string | null = null;
+
+function setInMemoryAccessToken(token?: string | null): void {
+  inMemoryAccessToken = token || null;
+}
 
 export const api = axios.create({
-  baseURL: `${API_BASE_URL}/api/v1`,
+  baseURL: `${getApiBaseUrl()}/api/v1`,
   headers: { "Content-Type": "application/json" },
   withCredentials: true,
+});
+
+api.interceptors.request.use((config) => {
+  if (inMemoryAccessToken) {
+    config.headers.Authorization = `Bearer ${inMemoryAccessToken}`;
+  }
+  return config;
 });
 
 api.interceptors.response.use(
@@ -22,7 +76,10 @@ api.interceptors.response.use(
       url.includes("/auth/logout") ||
       url.includes("/auth/register") ||
       url.includes("/auth/roles");
-    if (status === 401 && !isAuthProbe) {
+    if (status === 401 && !IS_AUTH_DISABLED) {
+      setInMemoryAccessToken(null);
+    }
+    if (status === 401 && !isAuthProbe && !IS_AUTH_DISABLED) {
       window.dispatchEvent(new CustomEvent("devops-auth:unauthorized"));
     }
     return Promise.reject(err);
@@ -30,6 +87,8 @@ api.interceptors.response.use(
 );
 
 export interface LoginResponse {
+  access_token?: string;
+  refresh_token?: string;
   user?: User;
   user_id?: string;
   username?: string;
@@ -70,10 +129,12 @@ function normalizeUser(data: LoginResponse | User): User {
 
 export const authService = {
   login: async (email: string, password: string): Promise<User> => {
+    setInMemoryAccessToken(null);
     const res = await api.post<LoginResponse>("/auth/login", {
       email,
       password,
     });
+    setInMemoryAccessToken(res.data.access_token);
     return normalizeUser(res.data);
   },
   register: async ({
@@ -82,12 +143,14 @@ export const authService = {
     password,
     role,
   }: RegisterRequest): Promise<User> => {
+    setInMemoryAccessToken(null);
     const res = await api.post<LoginResponse>("/auth/register", {
       email,
       username,
       password,
       role,
     });
+    setInMemoryAccessToken(res.data.access_token);
     return normalizeUser(res.data);
   },
   me: async (): Promise<User> => {
@@ -95,7 +158,11 @@ export const authService = {
     return normalizeUser(res.data);
   },
   logout: async (): Promise<void> => {
-    await api.post("/auth/logout");
+    try {
+      await api.post("/auth/logout");
+    } finally {
+      setInMemoryAccessToken(null);
+    }
   },
   roles: async (): Promise<RoleProfile[]> => {
     const res = await api.get<{ roles: RoleProfile[] }>("/auth/roles");
@@ -108,6 +175,30 @@ export const authService = {
   createUser: async (payload: AdminCreateUserRequest): Promise<User> => {
     const res = await api.post<User>("/auth/users", payload);
     return normalizeUser(res.data);
+  },
+};
+
+export interface SystemStatus {
+  backend_api: { status: string; message: string };
+  desktop_mode: { enabled: boolean; auth_disabled: boolean };
+  mobile_supported: boolean;
+  docker: { available: boolean; message: string };
+  github: { configured: boolean; message: string };
+  ml_model: { available: boolean; path: string; message: string };
+}
+
+export const healthService = {
+  status: async (): Promise<SystemStatus> => {
+    const res = await api.get<SystemStatus>("/health/status");
+    return res.data;
+  },
+  testConnection: async (baseUrl: string): Promise<SystemStatus> => {
+    const normalized = normalizeBackendUrl(baseUrl);
+    const res = await axios.get<SystemStatus>(`${normalized}/api/v1/health/status`, {
+      timeout: 6000,
+      withCredentials: true,
+    });
+    return res.data;
   },
 };
 

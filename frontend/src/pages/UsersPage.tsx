@@ -136,7 +136,7 @@ export default function UsersPage() {
 
   return (
     <div className="flex h-full flex-col bg-surface-900">
-      <div className="shrink-0 border-b border-surface-600 bg-surface-900/90 px-6 py-4 backdrop-blur">
+      <div className="shrink-0 border-b border-surface-600 bg-surface-900/90 px-4 py-4 backdrop-blur md:px-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-violet-500/30 bg-violet-500/10">
@@ -174,7 +174,7 @@ export default function UsersPage() {
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-y-auto px-6 py-6 xl:grid-cols-[420px_1fr]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-y-auto px-4 py-5 md:px-6 md:py-6 xl:grid-cols-[420px_1fr]">
         <form onSubmit={handleCreateUser} className="card h-fit p-5" noValidate>
           <div className="mb-5 flex items-start gap-3">
             <div className="rounded-2xl border border-primary-500/30 bg-primary-500/10 p-2 text-primary-600 dark:text-primary-300">

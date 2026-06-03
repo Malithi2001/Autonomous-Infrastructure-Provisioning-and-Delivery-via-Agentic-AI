@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { IS_AUTH_DISABLED, LOCAL_USER } from "@/config/runtime";
 import { authService } from "@/services/api";
 import type { User, UserRole } from "@/types";
 
@@ -19,11 +20,15 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
-  user: null,
-  isAuthenticated: false,
-  isLoading: true,
+  user: IS_AUTH_DISABLED ? LOCAL_USER : null,
+  isAuthenticated: IS_AUTH_DISABLED,
+  isLoading: !IS_AUTH_DISABLED,
 
   checkAuth: async () => {
+    if (IS_AUTH_DISABLED) {
+      set({ user: LOCAL_USER, isAuthenticated: true, isLoading: false });
+      return;
+    }
     set({ isLoading: true });
     try {
       const user = await authService.me();
@@ -34,6 +39,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   login: async (email, password) => {
+    if (IS_AUTH_DISABLED) {
+      set({ user: LOCAL_USER, isAuthenticated: true, isLoading: false });
+      return;
+    }
     set({ isLoading: true });
     try {
       const user = await authService.login(email, password);
@@ -45,6 +54,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   signup: async (email, username, password, role) => {
+    if (IS_AUTH_DISABLED) {
+      set({ user: LOCAL_USER, isAuthenticated: true, isLoading: false });
+      return;
+    }
     set({ isLoading: true });
     try {
       const user = await authService.register({
@@ -61,6 +74,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: async () => {
+    if (IS_AUTH_DISABLED) {
+      set({ user: LOCAL_USER, isAuthenticated: true, isLoading: false });
+      return;
+    }
     try {
       await authService.logout();
     } finally {
@@ -69,5 +86,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   markUnauthenticated: () =>
-    set({ user: null, isAuthenticated: false, isLoading: false }),
+    IS_AUTH_DISABLED
+      ? set({ user: LOCAL_USER, isAuthenticated: true, isLoading: false })
+      : set({ user: null, isAuthenticated: false, isLoading: false }),
 }));

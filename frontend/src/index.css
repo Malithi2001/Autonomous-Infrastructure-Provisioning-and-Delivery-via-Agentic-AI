@@ -77,9 +77,17 @@
   }
   html {
     @apply bg-background;
+    height: 100%;
   }
   body {
     @apply bg-background text-foreground font-sans antialiased;
+    min-height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  #root {
+    height: 100%;
+    min-height: 100%;
   }
   ::-webkit-scrollbar {
     width: 8px;
@@ -100,6 +108,25 @@
   .app-bg {
     @apply bg-surface-900 text-ink;
   }
+  .app-shell {
+    height: 100vh;
+    height: 100dvh;
+  }
+  .screen-scroll {
+    height: 100vh;
+    height: 100dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .mobile-top-bar {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+  }
+  .mobile-content {
+    padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  }
+  .mobile-bottom-nav {
+    padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+  }
   .app-gradient {
     @apply bg-[radial-gradient(circle_at_12%_18%,rgba(37,164,97,0.18),transparent_26rem),radial-gradient(circle_at_86%_8%,rgba(59,130,246,0.14),transparent_24rem),linear-gradient(135deg,hsl(var(--surface-900)/0.20),hsl(var(--surface-900)/0.94))];
   }
@@ -113,21 +140,24 @@
     @apply w-full rounded-2xl border border-surface-600 bg-surface-900/80 text-sm text-ink outline-none transition placeholder:text-ink-faint focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20;
   }
   .btn-primary {
-    @apply rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary-950/20 transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-surface-600 disabled:text-ink-faint disabled:shadow-none;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary-950/20 transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-surface-600 disabled:text-ink-faint disabled:shadow-none;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-surface-600 bg-surface-800 px-4 py-2.5 text-sm font-semibold text-ink transition hover:border-primary-500/40 hover:bg-primary-500/10 hover:text-primary-700 dark:hover:text-primary-200;
   }
   .btn-ghost {
-    @apply rounded-xl px-3 py-2 text-sm text-ink-muted transition hover:bg-surface-700 hover:text-ink;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm text-ink-muted transition hover:bg-surface-700 hover:text-ink;
   }
   .badge-success {
-    @apply rounded-full border border-primary-500/30 bg-primary-500/10 px-2.5 py-1 text-xs font-medium text-primary-700 dark:text-primary-200;
+    @apply inline-flex max-w-full items-center rounded-full border border-primary-500/30 bg-primary-500/10 px-2.5 py-1 text-xs font-medium text-primary-700 break-words dark:text-primary-200;
   }
   .badge-info {
-    @apply rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-700 dark:text-blue-200;
+    @apply inline-flex max-w-full items-center rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-700 break-words dark:text-blue-200;
   }
   .badge-warning {
-    @apply rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-200;
+    @apply inline-flex max-w-full items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700 break-words dark:text-amber-200;
   }
   .badge-error {
-    @apply rounded-full border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-700 dark:text-red-200;
+    @apply inline-flex max-w-full items-center rounded-full border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-700 break-words dark:text-red-200;
   }
 }

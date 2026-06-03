@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Smart DevOps Assistant</string>
+    <string name="title_activity_main">Smart DevOps Assistant</string>
+    <string name="package_name">com.smartdevops.assistant</string>
+    <string name="custom_url_scheme">com.smartdevops.assistant</string>
+</resources>

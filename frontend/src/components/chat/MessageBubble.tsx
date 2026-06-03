@@ -40,7 +40,7 @@ export function MessageBubble({ msg }: { msg: Message }) {
       </div>
       <div
         className={clsx(
-          "flex max-w-[82%] flex-1 flex-col",
+          "flex min-w-0 max-w-[calc(100%-3rem)] flex-1 flex-col sm:max-w-[82%]",
           !isAssistant && "items-end",
         )}
       >
@@ -68,7 +68,7 @@ export function MessageBubble({ msg }: { msg: Message }) {
         >
           {isAssistant ? (
             msg.content ? (
-              <div className="prose max-w-none text-sm dark:prose-invert prose-p:my-2 prose-pre:overflow-x-auto prose-pre:rounded-xl prose-pre:border prose-pre:border-surface-600 prose-pre:bg-surface-900 prose-code:rounded prose-code:bg-surface-700 prose-code:px-1 prose-code:py-0.5 prose-code:text-primary-700 dark:prose-code:text-primary-200">
+              <div className="prose max-w-none break-words text-sm dark:prose-invert prose-p:my-2 prose-pre:max-w-full prose-pre:overflow-x-auto prose-pre:rounded-xl prose-pre:border prose-pre:border-surface-600 prose-pre:bg-surface-900 prose-code:rounded prose-code:bg-surface-700 prose-code:px-1 prose-code:py-0.5 prose-code:text-primary-700 dark:prose-code:text-primary-200">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {msg.content}
                 </ReactMarkdown>
@@ -80,7 +80,7 @@ export function MessageBubble({ msg }: { msg: Message }) {
               </div>
             )
           ) : (
-            <p className="whitespace-pre-wrap">{msg.content}</p>
+            <p className="whitespace-pre-wrap break-words">{msg.content}</p>
           )}
         </div>
         {msg.isStreaming && isAssistant && (
@@ -125,7 +125,7 @@ export function MessageBubble({ msg }: { msg: Message }) {
                         ? step.input
                         : JSON.stringify(step.input)}
                     </p>
-                    <p className="whitespace-pre-wrap text-ink-muted">
+                    <p className="whitespace-pre-wrap break-words text-ink-muted">
                       {step.output}
                     </p>
                   </div>

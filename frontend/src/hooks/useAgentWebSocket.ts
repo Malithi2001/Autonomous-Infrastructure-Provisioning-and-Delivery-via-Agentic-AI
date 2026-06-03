@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { API_BASE_URL } from "@/services/api";
+import { getApiBaseUrl } from "@/services/api";
 import type { AgentWebSocketEvent, ConnectionStatus } from "@/types";
 
 interface UseAgentWebSocketOptions {
@@ -18,7 +18,7 @@ interface SendMessageOptions {
 const MAX_RECONNECT_ATTEMPTS = 5;
 
 function deriveWsUrl(sessionId?: string | null): string {
-  const base = new URL(API_BASE_URL, window.location.origin);
+  const base = new URL(getApiBaseUrl(), window.location.origin);
   const protocol = base.protocol === "https:" ? "wss:" : "ws:";
   const url = new URL(`${protocol}//${base.host}`);
   url.pathname = "/api/v1/agent/ws/agent";

@@ -127,10 +127,9 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
-async def ensure_default_admin() -> None:
-    """Seed safe demo RBAC accounts for local/development environments."""
+def _demo_users() -> list[dict[str, Any]]:
+    """Return safe demo RBAC accounts for local/development environments."""
     from app.core.security import UserRole, hash_password
-    from app.models.models import User
 
     demo_users = [
         {
@@ -164,39 +163,61 @@ async def ensure_default_admin() -> None:
     if settings.ENVIRONMENT.strip().lower() in {"production", "prod", "release"}:
         demo_users = demo_users[:1]
 
+    return [
+        {
+            **demo,
+            "hashed_password": hash_password(demo["password"]),
+        }
+        for demo in demo_users
+    ]
+
+
+async def ensure_default_users(db: AsyncSession) -> tuple[list[str], list[str]]:
+    """Seed default RBAC accounts into the provided session when missing."""
+    from app.models.models import User
+
+    created = []
+    updated = []
+    for demo in _demo_users():
+        legacy_email = demo.get("legacy_email")
+        lookup_conditions = [
+            User.username == demo["username"],
+            User.email == demo["email"],
+        ]
+        if legacy_email:
+            lookup_conditions.append(User.email == legacy_email)
+
+        result = await db.execute(
+            select(User).where(or_(*lookup_conditions))
+        )
+        user = result.scalar_one_or_none()
+        if user:
+            if legacy_email and user.email == legacy_email:
+                user.email = demo["email"]
+                updated.append(demo["username"])
+            continue
+
+        db.add(
+            User(
+                email=demo["email"],
+                username=demo["username"],
+                hashed_password=demo["hashed_password"],
+                role=demo["role"],
+                is_active=True,
+            )
+        )
+        created.append(demo["username"])
+
+    if created or updated:
+        await db.flush()
+
+    return created, updated
+
+
+async def ensure_default_admin() -> None:
+    """Seed safe demo RBAC accounts for local/development environments."""
     async with AsyncSessionLocal() as session:
-        created = []
-        updated = []
-        for demo in demo_users:
-            legacy_email = demo.get("legacy_email")
-            lookup_conditions = [
-                User.username == demo["username"],
-                User.email == demo["email"],
-            ]
-            if legacy_email:
-                lookup_conditions.append(User.email == legacy_email)
-
-            result = await session.execute(
-                select(User).where(or_(*lookup_conditions))
-            )
-            user = result.scalar_one_or_none()
-            if user:
-                if legacy_email and user.email == legacy_email:
-                    user.email = demo["email"]
-                    updated.append(demo["username"])
-                continue
-
-            session.add(
-                User(
-                    email=demo["email"],
-                    username=demo["username"],
-                    hashed_password=hash_password(demo["password"]),
-                    role=demo["role"],
-                    is_active=True,
-                )
-            )
-            created.append(demo["username"])
-
+        created, updated = await ensure_default_users(session)
         if created or updated:
             await session.commit()
             logger.info("database.default_users.seeded", usernames=created, updated_usernames=updated)

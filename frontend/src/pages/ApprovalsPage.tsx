@@ -2,13 +2,13 @@ import { getDebugHint, getUserFriendlyError } from "@/lib/errorMessages";
 import { approvalService } from "@/services/api";
 import { formatDistanceToNow } from "date-fns";
 import {
-    AlertCircle,
-    AlertTriangle,
-    CheckCircle,
-    Clock,
-    Loader2,
-    ShieldCheck,
-    XCircle,
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle,
+  Clock,
+  Loader2,
+  ShieldCheck,
+  XCircle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -113,7 +113,7 @@ export default function ApprovalsPage() {
 
   return (
     <div className="flex h-full flex-col bg-surface-900">
-      <div className="shrink-0 border-b border-surface-600 bg-surface-900/90 px-6 py-4 backdrop-blur">
+      <div className="shrink-0 border-b border-surface-600 bg-surface-900/90 px-4 py-4 backdrop-blur md:px-6">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-amber-500/30 bg-amber-500/10">
             <ShieldCheck
@@ -129,7 +129,7 @@ export default function ApprovalsPage() {
           </div>
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto px-6 py-6">
+      <div className="flex-1 overflow-y-auto px-4 py-5 md:px-6 md:py-6">
         {loading ? (
           <div className="flex h-32 items-center justify-center">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
@@ -176,7 +176,7 @@ export default function ApprovalsPage() {
               return (
                 <div
                   key={a.id}
-                  className="card p-5 transition hover:border-primary-500/30"
+                  className="card p-4 transition hover:border-primary-500/30 sm:p-5"
                 >
                   <div className="mb-4 flex items-start gap-3">
                     <AlertTriangle
@@ -258,11 +258,11 @@ export default function ApprovalsPage() {
                   )}
 
                   {a.status === "pending" && (
-                    <div className="flex flex-wrap gap-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                       <button
                         onClick={() => decide(a.id, true)}
                         disabled={decidingId === a.id}
-                        className="flex items-center gap-1.5 rounded-xl bg-primary-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-surface-600 disabled:text-ink-faint"
+                        className="btn-primary w-full sm:w-auto"
                       >
                         {decidingId === a.id ? (
                           <Loader2 size={14} className="animate-spin" />
@@ -274,7 +274,7 @@ export default function ApprovalsPage() {
                       <button
                         onClick={() => decide(a.id, false)}
                         disabled={decidingId === a.id}
-                        className="flex items-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-60 dark:text-red-300"
+                        className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-60 dark:text-red-300 sm:w-auto"
                       >
                         {decidingId === a.id ? (
                           <Loader2 size={14} className="animate-spin" />
