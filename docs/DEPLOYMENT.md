@@ -58,7 +58,7 @@ Backend:
 | `DATABASE_URL` | SQLAlchemy database URL. |
 | `SECRET_KEY` | JWT signing secret. Must be strong outside local demo. |
 | `ALLOWED_ORIGINS` | Comma-separated or JSON list of frontend origins. |
-| `COOKIE_SECURE` | Should be true behind HTTPS. |
+| `COOKIE_SECURE` | Explicitly controls the cookie's Secure flag in every environment. Use true behind HTTPS. |
 | `COOKIE_SAMESITE` | `lax`, `strict`, or `none`. |
 | `DESKTOP_MODE` | Enables local desktop behavior when true. Defaults to false. |
 | `DISABLE_AUTH` | Bypasses JWT/RBAC when true. Defaults to false. |
@@ -82,6 +82,15 @@ Frontend:
 | `VITE_DESKTOP_MODE` | Opens the frontend without login and displays Desktop User when true. |
 | `VITE_MOBILE_MODE` | Enables mobile packaging behavior for Capacitor builds. |
 | `VITE_DISABLE_AUTH` | Frontend-side auth bypass flag for local packaged demos only. |
+
+The current EC2 demo at `http://3.27.37.180/` uses `ENVIRONMENT=production`,
+`COOKIE_SECURE=false`, and `COOKIE_SAMESITE=lax`. The explicit `COOKIE_SECURE`
+setting controls login, refresh, and logout cookies; `ENVIRONMENT` does not
+override it. This allows the browser to send its HttpOnly authentication cookie
+to `/api/v1/auth/me` and the agent WebSocket over the demo's HTTP connection.
+Authentication, RBAC, JWT validation, HttpOnly, and SameSite remain enabled.
+When HTTPS is added, change `COOKIE_SECURE` back to `true` in the deployed backend
+environment and restart/recreate the backend so the new setting takes effect.
 
 Desktop production frontend env:
 

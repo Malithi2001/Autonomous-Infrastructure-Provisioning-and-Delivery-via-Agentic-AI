@@ -42,8 +42,6 @@ router = APIRouter()
 
 
 def _cookie_secure() -> bool:
-    if settings.ENVIRONMENT.strip().lower() in {"production", "prod", "release"}:
-        return True
     return bool(settings.COOKIE_SECURE)
 
 
