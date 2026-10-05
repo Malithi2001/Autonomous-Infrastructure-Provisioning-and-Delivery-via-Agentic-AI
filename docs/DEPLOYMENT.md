@@ -17,7 +17,7 @@ The core CI/CD features do not require Docker. Docker Compose is only a convenie
 
 Web mode keeps login, JWT cookies, RBAC, approvals, and audit logging. Desktop mode sets `DESKTOP_MODE=true` and `DISABLE_AUTH=true`, opens as `Desktop User`, hides Users & Roles and Sign out, bypasses JWT/RBAC for local use, and keeps audit records under `desktop_user`.
 
-The repository deploy workflow is optional. If AWS and EC2 secrets are not configured, the workflow records a skipped deployment and exits successfully so ordinary CI does not fail.
+The repository deployment workflow uses SSH to the existing EC2 Compose deployment after a successful `CI Pipeline` push run on `main`. It requires three EC2 repository secrets and a public SSH host identity variable; missing settings fail deployment while CI remains a separate workflow. See [EC2 setup, validation, troubleshooting, and rollback](EC2_DEPLOYMENT.md). AWS credentials and ECR are not required.
 
 ## 2. Runtime Components
 

@@ -1,5 +1,5 @@
 import axios from "axios";
-import { IS_AUTH_DISABLED } from "@/config/runtime";
+import { IS_AUTH_DISABLED, IS_DESKTOP_MODE, IS_MOBILE_MODE } from "@/config/runtime";
 import type { RoleProfile, User, UserRole } from "@/types";
 import { normalizeRole } from "@/lib/rbac";
 
@@ -29,7 +29,10 @@ export function normalizeBackendUrl(value: string): string {
 export function getApiBaseUrl(): string {
   const stored = safeLocalStorageGet(BACKEND_URL_STORAGE_KEY);
   const envValue = String(import.meta.env.VITE_API_BASE_URL || "").trim();
-  return normalizeBackendUrl(stored || envValue || "http://127.0.0.1:8000");
+  const defaultUrl = IS_DESKTOP_MODE || IS_MOBILE_MODE
+    ? "http://127.0.0.1:8000"
+    : window.location.origin;
+  return normalizeBackendUrl(stored || envValue || defaultUrl);
 }
 
 export function setStoredBackendUrl(value: string): string {

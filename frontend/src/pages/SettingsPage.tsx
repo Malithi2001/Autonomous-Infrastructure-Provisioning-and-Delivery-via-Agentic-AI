@@ -265,7 +265,7 @@ export default function SettingsPage() {
                 label="Active Backend"
                 value={getApiBaseUrl()}
                 ok={Boolean(status?.backend_api.status === "ok")}
-                note="The API client uses the saved URL first, then VITE_API_BASE_URL, then http://127.0.0.1:8000."
+                note="The API client uses the saved URL first, then VITE_API_BASE_URL. Web mode defaults to this site's origin; desktop and mobile default to http://127.0.0.1:8000."
               />
               <SettingRow
                 icon={KeyRound}
