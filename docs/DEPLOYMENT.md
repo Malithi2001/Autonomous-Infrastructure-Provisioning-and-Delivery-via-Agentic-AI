@@ -205,7 +205,25 @@ Required runtime artifacts:
 
 If the artifacts are unavailable, prediction endpoints return service-unavailable style errors instead of silently guessing.
 
-## 8. Scaling Notes
+## 8. GitHub Releases and service health
+
+`.github/workflows/release.yml` publishes releases when a `vMAJOR.MINOR.PATCH`
+tag is pushed. It rejects malformed versions and leading zeros, checks the tagged
+commit against fetched main history, and generates release notes with GitHub's
+built-in token. Existing tags and releases are never overwritten. The workflow
+does not upload application archives or environment files and requires no PAT.
+
+Create release tags only for a revision that has passed CI, completed deployment,
+and passed the public frontend/proxied API checks. The release workflow validates
+tag format and main ancestry; the operator verifies deployment before tagging.
+
+Compose health checks match each service: backend HTTP health, PostgreSQL
+readiness, Redis ping, the Celery worker's own node ping, Flower's internal
+`/flower/healthcheck`, and the frontend's HTTP root. Worker and Flower override the
+backend image's inherited HTTP probe, which would otherwise report them as
+unhealthy even when their actual services work.
+
+## 9. Scaling Notes
 
 For a stronger deployment:
 
