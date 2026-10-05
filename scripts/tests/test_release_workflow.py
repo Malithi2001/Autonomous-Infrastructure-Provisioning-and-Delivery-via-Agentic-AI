@@ -11,8 +11,8 @@ import unittest
 WORKFLOW = Path(__file__).resolve().parents[2] / ".github/workflows/release.yml"
 
 
-def shell_step(name):
-    lines = WORKFLOW.read_text().splitlines()
+def shell_step(name, workflow=WORKFLOW):
+    lines = workflow.read_text().splitlines()
     start = next(i for i, line in enumerate(lines) if line.strip() == f"- name: {name}")
     start = next(i for i in range(start, len(lines)) if lines[i].strip() == "run: |") + 1
     body = []
