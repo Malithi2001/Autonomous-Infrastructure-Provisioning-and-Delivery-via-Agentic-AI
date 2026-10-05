@@ -217,6 +217,34 @@ Create release tags only for a revision that has passed CI, completed deployment
 and passed the public frontend/proxied API checks. The release workflow validates
 tag format and main ancestry; the operator verifies deployment before tagging.
 
+`.github/workflows/packages.yml` publishes the backend and frontend Docker images
+to GitHub Packages (GHCR) on the same version tags. It verifies main ancestry and
+requires successful main CI for the exact tagged commit before publishing. The
+images are built with the existing Dockerfiles, including Python/npm dependencies;
+the backend image also supports the Celery worker and Flower commands. Environment
+files stay excluded by the existing Docker ignore rules.
+
+Image names are the lowercase repository path with `-backend` or `-frontend`:
+
+```text
+ghcr.io/malithi2001/autonomous-infrastructure-provisioning-and-delivery-via-agentic-ai-backend:v1.0.0
+ghcr.io/malithi2001/autonomous-infrastructure-provisioning-and-delivery-via-agentic-ai-frontend:v1.0.0
+```
+
+Each new image also receives a `sha-<full-commit-sha>` tag and OCI source, revision,
+and version labels. Existing version images are preserved when a job is rerun.
+Registry authentication uses the built-in `GITHUB_TOKEN` with `packages: write`;
+no additional PAT or registry password secret is needed. New GHCR packages default
+to private visibility; authenticated users with package access can pull them. A
+package owner can change visibility in GitHub's package settings if public pulls
+are desired. EC2 continues using its current CI-gated build/deployment workflow.
+
+To publish an existing release without moving its Git tag or changing its release:
+
+```bash
+gh workflow run packages.yml --ref main -f release_tag=v1.0.0
+```
+
 Compose health checks match each service: backend HTTP health, PostgreSQL
 readiness, Redis ping, the Celery worker's own node ping, Flower's internal
 `/flower/healthcheck`, and the frontend's HTTP root. Worker and Flower override the
