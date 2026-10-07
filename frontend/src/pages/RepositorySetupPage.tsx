@@ -5,15 +5,16 @@ import {
   type WorkflowPRResult,
 } from "@/services/api";
 import {
-    AlertCircle,
-    ExternalLink,
-    GitBranch,
-    GitPullRequest,
-    Loader2,
-    Radar,
-    ShieldCheck,
+  AlertCircle,
+  ExternalLink,
+  GitBranch,
+  GitPullRequest,
+  Loader2,
+  Radar,
+  ShieldCheck,
 } from "lucide-react";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 function stackSummary(stack: RepositoryScanResult["stack"]) {
   return [
@@ -83,7 +84,9 @@ function StackPanel({ result }: { result: RepositoryScanResult }) {
             >
               <p className="font-medium">{warning.path}</p>
               <p className="mt-1">{warning.issue}</p>
-              <p className="mt-1 text-xs opacity-90">{warning.recommendation}</p>
+              <p className="mt-1 text-xs opacity-90">
+                {warning.recommendation}
+              </p>
             </div>
           ))}
         </div>
@@ -392,6 +395,15 @@ export default function RepositorySetupPage() {
                     </p>
                   )}
                 </div>
+                {(prResult.approval_required ||
+                  prResult.status === "approval_required") && (
+                  <Link
+                    to="/approvals"
+                    className="btn-primary w-full sm:w-auto"
+                  >
+                    Review approval <ShieldCheck size={15} />
+                  </Link>
+                )}
                 {prResult.pull_request_url && (
                   <a
                     href={prResult.pull_request_url}

@@ -209,15 +209,15 @@ class TestHITLApprovalFlow:
         assert resp.status_code == 200
         assert isinstance(resp.json(), list)
 
-    def test_decide_endpoint_requires_operator(self, client: TestClient):
-        """developer role should be rejected from decide endpoint."""
+    def test_developer_decide_endpoint_hides_unknown_requests(self, client: TestClient):
+        """An unknown or unowned approval must not be available to a developer."""
         fake_id = str(uuid.uuid4())
         resp = client.post(
             f"/api/v1/approvals/{fake_id}/decide",
             json={"approved": True},
             headers=_auth("developer"),
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
     def test_decide_endpoint_404_for_unknown_id(self, client: TestClient):
         fake_id = str(uuid.uuid4())

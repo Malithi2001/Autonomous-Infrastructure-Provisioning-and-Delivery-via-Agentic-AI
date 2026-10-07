@@ -10,8 +10,11 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.database import get_db
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
@@ -44,7 +47,7 @@ ROLE_DESCRIPTIONS: dict[UserRole, str] = {
         "Operations controller. Can use production-safe operational tools and decide approval gates."
     ),
     UserRole.DEVELOPER: (
-        "Builder workflow. Can chat with the agent, inspect systems, and use lower-risk development/staging tools."
+        "Can build CI/CD workflows, review their own approval requests, and use development/staging tools."
     ),
     UserRole.VIEWER: (
         "Read-only observer. Can use safe AI chat and track their own activity and approval requests."
@@ -64,11 +67,13 @@ ROLE_PERMISSIONS: dict[UserRole, list[str]] = {
     UserRole.DEVELOPER: [
         "agent:chat",
         "approvals:read",
+        "approvals:decide:own",
         "agents:orchestrate",
         "cicd:read",
         "cicd:generate",
         "failures:predict",
         "repositories:read",
+        "repositories:write",
         "workflow_failures:read",
         "executions:read",
         "logs:read",
@@ -216,13 +221,39 @@ def _decode_access_payload(request: Request, bearer_token: str | None = None) ->
     return payload
 
 
+async def validate_account_payload(payload: dict, db: AsyncSession) -> dict:
+    """Enforce persisted account status and invalidate pre-deactivation tokens.
+
+    Newly issued tokens carry a user_version and require an existing account.
+    Legacy signed tokens still use their original claims if there is no matching
+    account, preserving existing integrations; registered accounts are always
+    checked, including legacy tokens with an implicit version of zero.
+    """
+    from app.models.models import User
+
+    result = await db.execute(
+        select(User.is_active, User.token_version, User.role, User.username)
+        .where(User.id == str(payload.get("sub", "")))
+    )
+    user = result.first()
+    if user is None:
+        if "user_version" in payload:
+            raise HTTPException(status_code=401, detail="Account no longer exists. Sign in again.")
+        return payload
+    if not user.is_active:
+        raise HTTPException(status_code=401, detail="Account is deactivated. Contact your administrator.")
+    if payload.get("user_version", 0) != user.token_version:
+        raise HTTPException(status_code=401, detail="Session revoked. Sign in again.")
+    return {**payload, "role": coerce_role(user.role).value, "username": user.username}
+
+
 def require_permission(permission: str):
     """FastAPI dependency: require a specific permission from bearer token or httpOnly cookie."""
 
-    async def _check(request: Request, token: str | None = Depends(oauth2_scheme)):
+    async def _check(request: Request, token: str | None = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)):
         if auth_bypass_enabled():
             return desktop_user_payload()
-        payload = _decode_access_payload(request, token)
+        payload = await validate_account_payload(_decode_access_payload(request, token), db)
         role = coerce_role(payload.get("role"))
         if not has_permission(role, permission):
             raise HTTPException(
@@ -237,10 +268,10 @@ def require_permission(permission: str):
 def require_role(*roles: UserRole):
     allowed = {role.value for role in roles}
 
-    async def _check(request: Request, token: str | None = Depends(oauth2_scheme)):
+    async def _check(request: Request, token: str | None = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)):
         if auth_bypass_enabled():
             return desktop_user_payload()
-        payload = _decode_access_payload(request, token)
+        payload = await validate_account_payload(_decode_access_payload(request, token), db)
         if payload.get("role") not in allowed and payload.get("role") != UserRole.ADMIN.value:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role.")
         return payload
@@ -248,8 +279,10 @@ def require_role(*roles: UserRole):
     return _check
 
 
-async def get_current_user(request: Request, token: str | None = Depends(oauth2_scheme)) -> dict:
+async def get_current_user(
+    request: Request, token: str | None = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)
+) -> dict:
     """Return decoded JWT payload from Authorization bearer or secure httpOnly cookie."""
     if auth_bypass_enabled():
         return desktop_user_payload()
-    return _decode_access_payload(request, token)
+    return await validate_account_payload(_decode_access_payload(request, token), db)

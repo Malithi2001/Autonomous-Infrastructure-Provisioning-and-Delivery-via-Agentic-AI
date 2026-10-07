@@ -5,8 +5,9 @@ Flow
 ----
 1. Agent detects HIGH/CRITICAL risk → calls `create_approval_request()` helper.
 2. Record lands in `approval_requests` table with status="pending".
-3. Operator polls GET /api/v1/approvals/ to see pending items.
-4. Operator calls POST /api/v1/approvals/{id}/decide with approved=true|false.
+3. A reviewer polls GET /api/v1/approvals/ to see permitted pending items.
+4. A reviewer calls POST /api/v1/approvals/{id}/decide with approved=true|false.
+   Developers review their own authorized work; operators/admins review shared work.
 5. If approved, we execute the tool and log an Execution record.
    If rejected, we mark the request "rejected" and log a cancelled Execution.
 """
@@ -20,7 +21,7 @@ from typing import Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -30,6 +31,10 @@ from app.models.models import ApprovalRequest, Execution
 from app.schemas.schemas import ApprovalDecision, ApprovalRequestOut
 from app.services import audit_service
 from app.services.activity_visibility_service import activity_actor, can_view_all_activity
+from app.services.approval_policy_service import (
+    approval_response, can_decide_approval, can_review_shared_approvals, require_approval_reviewer,
+)
+from app.services.user_management_service import apply_status_change
 from app.services.fix_pr_service import FixPRServiceError, create_fix_pr_for_failure, mark_fix_pr_rejected
 from app.services.github_app_service import GitHubAppError, get_installation_access_token, get_installation_for_repo
 
@@ -138,14 +143,14 @@ async def list_pending_approvals(
     """List approval requests (default: pending only)."""
     stmt = select(ApprovalRequest).order_by(ApprovalRequest.created_at.desc())
     # Operators still need the shared queue to perform authorized reviews.
-    # Personal dashboards request "mine"; members without decision permission
+    # Personal dashboards request "mine"; members without shared review permission
     # can only read their own requests even if they explicitly request "all".
-    if scope == "mine" or not has_permission(current_user.get("role"), "approvals:decide"):
+    if scope == "mine" or not can_review_shared_approvals(current_user):
         stmt = stmt.where(ApprovalRequest.requested_by == activity_actor(current_user))
     if status_filter:
         stmt = stmt.where(ApprovalRequest.status == status_filter)
     result = await db.execute(stmt)
-    return result.scalars().all()
+    return [approval_response(record, current_user) for record in result.scalars().all()]
 
 
 @router.get("/{approval_id}", response_model=ApprovalRequestOut)
@@ -156,15 +161,16 @@ async def get_approval(
 ):
     """Fetch a single approval request by ID."""
     stmt = select(ApprovalRequest).where(ApprovalRequest.id == str(approval_id))
-    if not can_view_all_activity(current_user) and not has_permission(
-        current_user.get("role"), "approvals:decide"
-    ):
+    if not can_view_all_activity(current_user) and not can_review_shared_approvals(current_user):
         stmt = stmt.where(ApprovalRequest.requested_by == activity_actor(current_user))
     result = await db.execute(stmt)
     record = result.scalar_one_or_none()
     if not record:
         raise HTTPException(status_code=404, detail="Approval request not found.")
-    return record
+
+    if record.tool_name == "admin_set_user_active" and not has_permission(current_user.get("role"), "users:manage"):
+        raise HTTPException(status_code=403, detail="Only an administrator can decide account status changes.")
+    return approval_response(record, current_user)
 
 
 @router.post("/{approval_id}/decide", status_code=200)
@@ -172,18 +178,41 @@ async def decide_approval(
     approval_id: UUID,
     decision: ApprovalDecision,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("approvals:decide")),
+    current_user: dict = Depends(require_approval_reviewer),
 ):
     """
     Approve or reject a pending HITL approval request.
-    Only operators and admins can approve high-risk actions.
+    Operators/admins review shared work; developers decide only their own work
+    and can approve only tools authorized for their role.
 
     On approval  → the tool is executed immediately and an Execution record is created.
     On rejection → the request is marked rejected and a cancelled Execution is logged.
     """
-    record: Optional[ApprovalRequest] = await db.get(ApprovalRequest, str(approval_id))
+    query = select(ApprovalRequest).where(ApprovalRequest.id == str(approval_id))
+    if not can_review_shared_approvals(current_user):
+        query = query.where(ApprovalRequest.requested_by == activity_actor(current_user))
+    record: Optional[ApprovalRequest] = (await db.execute(query)).scalar_one_or_none()
     if not record:
         raise HTTPException(status_code=404, detail="Approval request not found.")
+
+    if record.tool_name == "admin_set_user_active" and not has_permission(current_user.get("role"), "users:manage"):
+        raise HTTPException(status_code=403, detail="Only an administrator can decide account status changes.")
+
+    if not can_decide_approval(current_user, record, approved=decision.approved):
+        raise HTTPException(status_code=403, detail="This action requires review by an operator or administrator.")
+
+    # Serialize decisions before checking status, including simultaneous
+    # reviews by the developer and an operator/admin. SQLite has no row locks;
+    # a no-op write acquires its transaction lock.
+    if db.get_bind().dialect.name == "sqlite":
+        await db.execute(
+            update(ApprovalRequest).where(ApprovalRequest.id == str(approval_id))
+            .values(status=ApprovalRequest.status)
+        )
+    record = (await db.execute(
+        select(ApprovalRequest).where(ApprovalRequest.id == str(approval_id))
+        .with_for_update().execution_options(populate_existing=True)
+    )).scalar_one()
 
     if record.status != "pending":
         raise HTTPException(
@@ -221,7 +250,11 @@ async def decide_approval(
     if decision.approved:
         # Execute the tool
         tool_input = json.loads(record.tool_input or "{}")
-        if record.tool_name == "github_create_fix_pr":
+        if record.tool_name == "admin_set_user_active":
+            result = await apply_status_change(db, tool_input, current_user)
+            exec_details = json.dumps(result)
+            exec_status = "completed"
+        elif record.tool_name == "github_create_fix_pr":
             try:
                 result = await create_fix_pr_for_failure(
                     db,

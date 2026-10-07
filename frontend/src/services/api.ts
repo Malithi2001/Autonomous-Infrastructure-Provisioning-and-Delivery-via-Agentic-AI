@@ -117,6 +117,13 @@ export interface AdminCreateUserRequest {
   is_active?: boolean;
 }
 
+export interface UserStatusApproval {
+  approval_id: string;
+  user: User;
+  is_active: boolean;
+  status: "approval_required";
+}
+
 function normalizeUser(data: LoginResponse | User): User {
   if ("user" in data && data.user)
     return { ...data.user, role: normalizeRole(data.user.role) };
@@ -178,6 +185,10 @@ export const authService = {
   createUser: async (payload: AdminCreateUserRequest): Promise<User> => {
     const res = await api.post<User>("/auth/users", payload);
     return normalizeUser(res.data);
+  },
+  requestUserStatusChange: async (userId: string, isActive: boolean): Promise<UserStatusApproval> => {
+    const res = await api.post<UserStatusApproval>(`/auth/users/${userId}/status-requests`, { is_active: isActive });
+    return res.data;
   },
 };
 

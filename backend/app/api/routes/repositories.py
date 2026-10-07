@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import require_permission
+from app.core.security import has_permission, require_permission
 from app.models.models import ApprovalRequest, Execution
 from app.schemas.schemas import (
     RepositoryInstallationOut,
@@ -130,7 +130,9 @@ async def create_repository_workflow_pr(
     db.add(execution)
     await db.flush()
 
-    if settings.ENABLE_HITL:
+    # Developer CI/CD work always requires an explicit human decision, even
+    # when the demo configuration disables gates for shared reviewers.
+    if settings.ENABLE_HITL or not has_permission(current_user.get("role"), "approvals:decide"):
         approval = ApprovalRequest(
             id=str(uuid.uuid4()),
             session_id=str(uuid.uuid4()),

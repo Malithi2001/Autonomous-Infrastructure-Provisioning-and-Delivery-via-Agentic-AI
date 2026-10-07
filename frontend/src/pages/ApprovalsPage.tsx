@@ -14,6 +14,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 interface Approval {
   id: string;
@@ -28,6 +29,8 @@ interface Approval {
   status: string;
   expires_at?: string;
   created_at: string;
+  can_approve?: boolean;
+  can_reject?: boolean;
 }
 
 interface ApprovalDetails {
@@ -83,18 +86,29 @@ export default function ApprovalsPage() {
 }
 
 function ApprovalsContent({ user }: { user: User | null }) {
-  const canDecide = hasPermission(user?.role, "approvals:decide");
+  const canReviewShared = hasPermission(user?.role, "approvals:decide");
+  const canReviewOwn = hasPermission(user?.role, "approvals:decide:own");
+  const canDecide = canReviewShared || canReviewOwn;
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [decisionMessage, setDecisionMessage] = useState("");
   const [decidingId, setDecidingId] = useState<string | null>(null);
 
   const fetchApprovals = async () => {
     setLoading(true);
     setError("");
     try {
-      const data = await approvalService.list();
-      setApprovals(data);
+      const data: Approval[] = await approvalService.list(
+        canReviewShared ? "all" : "mine",
+      );
+      setApprovals(
+        data.filter(
+          (approval) =>
+            canReviewShared ||
+            approval.requested_by === (user?.username || user?.id),
+        ),
+      );
     } catch (err: any) {
       setError(getUserFriendlyError(err));
     } finally {
@@ -106,13 +120,42 @@ function ApprovalsContent({ user }: { user: User | null }) {
     fetchApprovals();
   }, []);
 
-  const decide = async (id: string, approved: boolean) => {
-    if (decidingId || !canDecide) return;
-    setDecidingId(id);
+  const canDecideRequest = (approval: Approval, approved: boolean) => {
+    if (!canDecide || approval.status !== "pending") return false;
+    if (
+      approval.tool_name === "admin_set_user_active" &&
+      !hasPermission(user?.role, "users:manage")
+    )
+      return false;
+    if (
+      !canReviewShared &&
+      approval.requested_by !== (user?.username || user?.id)
+    )
+      return false;
+    return (
+      (approved ? approval.can_approve : approval.can_reject) ?? canReviewShared
+    );
+  };
+
+  const decide = async (approval: Approval, approved: boolean) => {
+    if (decidingId || !canDecideRequest(approval, approved)) return;
+    setDecidingId(approval.id);
     setError("");
+    setDecisionMessage("");
     try {
-      await approvalService.decide(id, approved);
+      const result = await approvalService.decide(approval.id, approved);
       await fetchApprovals();
+      if (approved && result.execution_status === "failed") {
+        setError(
+          "Approval was recorded, but execution failed. Open the audit log for details.",
+        );
+      } else {
+        setDecisionMessage(
+          approved
+            ? "Approved. The action completed."
+            : "Rejected. The action was cancelled.",
+        );
+      }
     } catch (err: any) {
       setError(getUserFriendlyError(err));
     } finally {
@@ -132,17 +175,34 @@ function ApprovalsContent({ user }: { user: User | null }) {
           </div>
           <div>
             <h1 className="text-base font-semibold text-ink">
-              {canDecide ? "Approval review queue" : "Your approval requests"}
+              {canReviewShared
+                ? "Approval review queue"
+                : canReviewOwn
+                  ? "Your approval review queue"
+                  : "Your approval requests"}
             </h1>
             <p className="text-xs text-ink-subtle">
-              {canDecide
+              {canReviewShared
                 ? "Review high-risk requests before execution"
-                : "Track your requests waiting for an operator or admin to review"}
+                : canReviewOwn
+                  ? "Approve or reject your own work. Privileged actions need an operator or admin."
+                  : "Track your requests waiting for an operator or admin to review"}
             </p>
           </div>
         </div>
       </div>
       <div className="workspace-page-body min-h-0 flex-1 overflow-y-auto py-5">
+        {decisionMessage && (
+          <div
+            role="status"
+            className="mx-auto mb-4 flex max-w-3xl flex-wrap items-center justify-between gap-3 rounded-xl border border-primary-500/30 bg-primary-500/10 p-4 text-sm text-primary-700 dark:text-primary-200"
+          >
+            <span>{decisionMessage}</span>
+            <Link to="/executions" className="font-medium underline">
+              View audit log
+            </Link>
+          </div>
+        )}
         {loading ? (
           <div className="flex h-32 items-center justify-center">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
@@ -154,6 +214,12 @@ function ApprovalsContent({ user }: { user: User | null }) {
                 <AlertCircle size={18} className="mt-0.5 shrink-0" />
                 <div>
                   <p className="text-sm font-semibold">{error}</p>
+                  <Link
+                    to="/executions"
+                    className="mt-2 inline-block text-xs underline"
+                  >
+                    View audit log
+                  </Link>
                   {getDebugHint(error) && (
                     <p className="mt-2 text-xs opacity-80">
                       Tip: {getDebugHint(error)}
@@ -270,32 +336,45 @@ function ApprovalsContent({ user }: { user: User | null }) {
                     </div>
                   )}
 
-                  {a.status === "pending" && canDecide && (
+                  {canReviewOwn &&
+                    canDecideRequest(a, false) &&
+                    !canDecideRequest(a, true) && (
+                      <p className="mb-3 text-xs text-ink-subtle">
+                        An operator or administrator must approve this action.
+                        You can reject your request.
+                      </p>
+                    )}
+                  {(canDecideRequest(a, true) ||
+                    canDecideRequest(a, false)) && (
                     <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                      <button
-                        onClick={() => decide(a.id, true)}
-                        disabled={decidingId === a.id}
-                        className="btn-primary w-full sm:w-auto"
-                      >
-                        {decidingId === a.id ? (
-                          <Loader2 size={14} className="animate-spin" />
-                        ) : (
-                          <CheckCircle size={14} />
-                        )}
-                        Approve
-                      </button>
-                      <button
-                        onClick={() => decide(a.id, false)}
-                        disabled={decidingId === a.id}
-                        className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-60 dark:text-red-300 sm:w-auto"
-                      >
-                        {decidingId === a.id ? (
-                          <Loader2 size={14} className="animate-spin" />
-                        ) : (
-                          <XCircle size={14} />
-                        )}
-                        Reject
-                      </button>
+                      {canDecideRequest(a, true) && (
+                        <button
+                          onClick={() => decide(a, true)}
+                          disabled={decidingId !== null}
+                          className="btn-primary w-full sm:w-auto"
+                        >
+                          {decidingId === a.id ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <CheckCircle size={14} />
+                          )}
+                          Approve
+                        </button>
+                      )}
+                      {canDecideRequest(a, false) && (
+                        <button
+                          onClick={() => decide(a, false)}
+                          disabled={decidingId !== null}
+                          className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-60 dark:text-red-300 sm:w-auto"
+                        >
+                          {decidingId === a.id ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <XCircle size={14} />
+                          )}
+                          Reject
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

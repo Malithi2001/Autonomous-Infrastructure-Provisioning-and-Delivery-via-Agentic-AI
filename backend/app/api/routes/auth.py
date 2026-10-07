@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Literal, cast
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import or_, select
@@ -35,8 +36,12 @@ from app.schemas.schemas import (
     TokenResponse,
     UserOut,
     UserRegister,
+    UserStatusApprovalOut,
+    UserStatusChangeRequest,
 )
 from app.services import audit_service
+from app.services.user_management_service import validate_status_change
+from app.api.routes.approvals import create_approval_request
 
 router = APIRouter()
 
@@ -91,8 +96,8 @@ async def _read_login_payload(request: Request) -> dict[str, Any]:
     }
 
 
-def _token_payload(user: User) -> dict[str, str]:
-    return {"sub": str(user.id), "role": user.role.value, "username": user.username}
+def _token_payload(user: User) -> dict[str, Any]:
+    return {"sub": str(user.id), "role": user.role.value, "username": user.username, "user_version": user.token_version}
 
 
 def _login_response(user: User, access_token: str, refresh_token: str) -> LoginResponse:
@@ -328,6 +333,8 @@ async def refresh_token(payload: RefreshRequest, response: Response, db: AsyncSe
         raise HTTPException(status_code=401, detail="Refresh session not found.")
 
     session, user = row
+    if not user.is_active or token_data.get("user_version", 0) != user.token_version:
+        raise HTTPException(status_code=401, detail="Account inactive or session revoked. Sign in again.")
     expires_at = session.expires_at
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
@@ -381,6 +388,36 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user), 
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
     return user
+
+
+@router.post("/users/{user_id}/status-requests", response_model=UserStatusApprovalOut, status_code=202)
+async def request_user_status_change(
+    user_id: UUID,
+    payload: UserStatusChangeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_permission("users:manage")),
+):
+    """Prepare an admin-only account change; the separate approval decision applies it."""
+    user = await validate_status_change(db, str(user_id), payload.is_active, current_user)
+    action = "Activate" if payload.is_active else "Deactivate"
+    actor = current_user.get("username") or current_user.get("sub") or "unknown"
+    approval = await create_approval_request(
+        db=db, session_id=f"user-status:{user.id}", requested_by=actor,
+        tool_name="admin_set_user_active",
+        tool_input={"user_id": user.id, "username": user.username, "is_active": payload.is_active,
+                    "expected_account_revision": user.token_version},
+        action=f"{action} account", risk_level="high",
+        summary=f"{action} {user.username} ({user.role.value}).",
+        timeout_seconds=settings.HITL_APPROVAL_TIMEOUT_SECONDS,
+    )
+    await audit_service.log_execution(
+        db, tool_name="admin_set_user_active", action_summary=f"Requested: {action.lower()} {user.username}.",
+        status="pending", actor=actor,
+        tool_input={"user_id": user.id, "is_active": payload.is_active, "approval_id": approval.id},
+    )
+    return UserStatusApprovalOut(
+        approval_id=UUID(approval.id), user=UserOut.model_validate(user), is_active=payload.is_active
+    )
 
 
 @router.get("/users", response_model=list[UserOut])

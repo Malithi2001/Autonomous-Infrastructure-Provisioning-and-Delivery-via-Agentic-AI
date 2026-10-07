@@ -560,15 +560,18 @@ function DashboardContent({ user }: { user: User | null }) {
               )}
             </Panel>
           </div>
-          {can("approvals:decide") && (
+          {(can("approvals:decide") || can("approvals:decide:own")) && (
             <section className="card flex flex-wrap items-center justify-between gap-4 p-5">
               <div>
                 <h2 className="text-sm font-semibold text-ink">
-                  Review requests as an operator
+                  {can("approvals:decide")
+                    ? "Review requests as an operator"
+                    : "Review your own work"}
                 </h2>
                 <p className="mt-1 text-xs text-ink-subtle">
-                  Your approval role lets you review the shared queue on the
-                  approvals page.
+                  {can("approvals:decide")
+                    ? "Your approval role lets you review the shared queue on the approvals page."
+                    : "Review and decide your own CI/CD requests before they execute."}
                 </p>
               </div>
               <Link to="/approvals" className="btn-secondary">

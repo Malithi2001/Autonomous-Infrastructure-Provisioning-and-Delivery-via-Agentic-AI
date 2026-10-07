@@ -24,6 +24,7 @@ from app.core.security import (
     desktop_user_payload,
     has_permission,
     require_permission,
+    validate_account_payload,
 )
 from app.schemas.schemas import ChatRequest, ChatResponse, IntermediateStep
 from app.services import audit_service
@@ -325,6 +326,9 @@ async def agent_ws(
             if payload.get("type") != "access":
                 await websocket.close(code=4003, reason="Invalid token type")
                 return
+            if "user_version" in payload:
+                async with AsyncSessionLocal() as db:
+                    payload = await validate_account_payload(payload, db)
             user_role = payload.get("role", "developer")
             if not has_permission(user_role, "agent:chat"):
                 await websocket.close(code=4003, reason="Agent chat permission required")
@@ -361,9 +365,16 @@ async def agent_ws(
                 await websocket.send_json({"event": "error", "detail": "Empty message"})
                 continue
 
-            agent = get_or_create_agent(session_id=ws_session_id, user_role=user_role)
             try:
                 async with AsyncSessionLocal() as db:
+                    if not auth_bypass_enabled():
+                        try:
+                            payload = await validate_account_payload(payload, db)
+                        except HTTPException:
+                            await websocket.close(code=4003, reason="Account inactive or session revoked")
+                            return
+                        user_role = payload["role"]
+                    agent = get_or_create_agent(session_id=ws_session_id, user_role=user_role)
                     async for token_chunk in agent.stream_chat(message, db=db):
                         await websocket.send_text(token_chunk)
                     await db.commit()

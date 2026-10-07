@@ -231,7 +231,7 @@ async def _seed_approval(db_session, actor="test_user", **kwargs):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("role", ["developer", "viewer"])
-async def test_members_can_only_track_their_own_approval_requests(db_session, role):
+async def test_members_only_see_their_own_approval_requests_and_scoped_decisions(db_session, role):
     own = await _seed_approval(db_session)
     other = await _seed_approval(db_session, "other_user")
     with TestClient(app) as client:
@@ -240,11 +240,14 @@ async def test_members_can_only_track_their_own_approval_requests(db_session, ro
             response = client.get("/api/v1/approvals", params={"scope": scope}, headers=headers)
             assert response.status_code == 200
             assert [item["id"] for item in response.json()] == [own.id]
+            assert response.json()[0]["can_approve"] == (role == "developer")
+            assert response.json()[0]["can_reject"] == (role == "developer")
         assert client.get(f"/api/v1/approvals/{own.id}", headers=headers).status_code == 200
         assert client.get(f"/api/v1/approvals/{other.id}", headers=headers).status_code == 404
+        target = own if role == "viewer" else other
         assert client.post(
-            f"/api/v1/approvals/{own.id}/decide", json={"approved": True}, headers=headers,
-        ).status_code == 403
+            f"/api/v1/approvals/{target.id}/decide", json={"approved": True}, headers=headers,
+        ).status_code == (403 if role == "viewer" else 404)
 
 
 @pytest.mark.asyncio

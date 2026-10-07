@@ -1,7 +1,7 @@
 """Pydantic request/response schemas."""
 import uuid
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -75,6 +75,17 @@ class AdminCreateUser(BaseModel):
     is_active: bool = True
 
 
+class UserStatusChangeRequest(BaseModel):
+    is_active: bool
+
+
+class UserStatusApprovalOut(BaseModel):
+    approval_id: uuid.UUID
+    user: UserOut
+    is_active: bool
+    status: Literal["approval_required"] = "approval_required"
+
+
 class RoleProfile(BaseModel):
     role: UserRole
     label: str
@@ -108,6 +119,8 @@ class ApprovalRequestOut(BaseModel):
     decided_by: Optional[str] = None
     decision_note: Optional[str] = None
     decided_at: Optional[datetime] = None
+    can_approve: bool = False
+    can_reject: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

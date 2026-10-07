@@ -97,6 +97,7 @@ async def ensure_schema_compatibility(conn) -> None:
     """
     dialect = conn.dialect.name
     if dialect == "postgresql":
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0"))
         await conn.execute(
             text(
                 "ALTER TABLE workflow_failures "
@@ -106,6 +107,9 @@ async def ensure_schema_compatibility(conn) -> None:
         return
 
     if dialect == "sqlite":
+        user_columns = await conn.execute(text("PRAGMA table_info(users)"))
+        if "token_version" not in {row[1] for row in user_columns.fetchall()}:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0"))
         result = await conn.execute(text("PRAGMA table_info(workflow_failures)"))
         columns = {row[1] for row in result.fetchall()}
         if "recommendation_json" not in columns:

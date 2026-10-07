@@ -66,16 +66,18 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
     role: "developer",
     label: "Developer",
     description:
-      "Builder workflow for agent chat, diagnostics, metrics, logs, executions, and staging deployment tasks.",
-    headline: "Diagnostics and staging workflow",
+      "Build CI/CD workflows, propose workflow pull requests, review your own approvals, and use development/staging tools.",
+    headline: "CI/CD and personal approvals",
     permissions: [
       "agent:chat",
       "approvals:read",
+      "approvals:decide:own",
       "agents:orchestrate",
       "cicd:read",
       "cicd:generate",
       "failures:predict",
       "repositories:read",
+      "repositories:write",
       "workflow_failures:read",
       "executions:read",
       "logs:read",
@@ -115,7 +117,7 @@ export const DEMO_CREDENTIALS: Record<
   developer: {
     email: "devops.engineer@example.com",
     password: "developer123",
-    note: "Inspect systems and run safe development workflows.",
+    note: "Build CI/CD workflows and review your own approval requests.",
   },
   viewer: {
     email: "viewer@company.example.com",
@@ -191,7 +193,8 @@ export function canAccessPath(
     return hasPermission(role, "approvals:read");
   if (path.startsWith("/executions"))
     return hasPermission(role, "executions:read");
-  if (path.startsWith("/evaluation")) return hasPermission(role, "metrics:read");
+  if (path.startsWith("/evaluation"))
+    return hasPermission(role, "metrics:read");
   if (path.startsWith("/multi-agent"))
     return hasPermission(role, "agents:orchestrate");
   if (path.startsWith("/chat") || path === "/")
