@@ -136,7 +136,7 @@ export default function UsersPage() {
 
   return (
     <div className="flex h-full flex-col bg-surface-900">
-      <div className="shrink-0 border-b border-surface-600 bg-surface-900/90 px-4 py-4 backdrop-blur md:px-6">
+      <div className="workspace-page-header shrink-0">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-violet-500/30 bg-violet-500/10">

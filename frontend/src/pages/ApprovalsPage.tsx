@@ -113,7 +113,7 @@ export default function ApprovalsPage() {
 
   return (
     <div className="flex h-full flex-col bg-surface-900">
-      <div className="shrink-0 border-b border-surface-600 bg-surface-900/90 px-4 py-4 backdrop-blur md:px-6">
+      <div className="workspace-page-header shrink-0">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-amber-500/30 bg-amber-500/10">
             <ShieldCheck
@@ -129,7 +129,7 @@ export default function ApprovalsPage() {
           </div>
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 py-5 md:px-6 md:py-6">
+      <div className="workspace-page-body min-h-0 flex-1 overflow-y-auto py-5">
         {loading ? (
           <div className="flex h-32 items-center justify-center">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />

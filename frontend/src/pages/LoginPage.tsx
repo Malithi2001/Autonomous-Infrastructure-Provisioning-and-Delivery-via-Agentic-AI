@@ -11,7 +11,10 @@ import {
   ShieldCheck,
   Sparkles,
   UserRound,
-  UsersRound,
+  GitBranch,
+  GitPullRequest,
+  SearchCode,
+  ArrowRight,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { useAuthStore } from "@/store/authStore";
@@ -129,55 +132,73 @@ export default function LoginPage() {
       </div>
 
       <main className="relative grid min-h-full grid-cols-1 lg:grid-cols-[1.05fr_0.95fr]">
-        <section className="hidden flex-col justify-between border-r border-surface-600/70 p-10 lg:flex">
+        <section className="login-story relative hidden flex-col justify-between overflow-hidden p-10 text-white lg:flex xl:p-14">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-primary-500/30 bg-primary-500/10 shadow-glow">
-              <Bot
-                size={23}
-                className="text-primary-500 dark:text-primary-300"
-              />
-            </div>
-            <div>
-              <p className="font-semibold text-ink">Smart DevOps Assistant</p>
-              <p className="text-xs text-ink-subtle">
-                Role-governed infrastructure delivery
-              </p>
-            </div>
+            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-400 text-slate-950">
+              <GitBranch size={25} />
+            </span>
+            <span>
+              <span className="block text-2xl font-semibold tracking-tight">
+                DevOps<span className="text-emerald-400">.</span>
+              </span>
+              <span className="text-[10px] uppercase tracking-[0.22em] text-slate-400">
+                AI workspace
+              </span>
+            </span>
           </div>
-
-          <div className="max-w-2xl">
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary-500/25 bg-primary-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.26em] text-primary-700 dark:text-primary-300">
-              <Sparkles size={13} /> RBAC Control Plane
-            </div>
-            <h1 className="text-4xl font-semibold leading-tight text-ink xl:text-5xl">
-              One AI DevOps workspace, four safe access levels.
-            </h1>
-            <p className="mt-5 max-w-xl text-base leading-7 text-ink-muted">
-              Admins provision accounts, operators approve high-risk actions,
-              developers build safely, and viewers get read-only operational
-              insight.
+          <div className="my-12 max-w-lg">
+            <p className="mb-5 flex items-center gap-2 text-xs font-medium text-emerald-300">
+              <Sparkles size={15} /> Your delivery workflow, connected.
             </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 text-sm xl:grid-cols-4">
-            {ROLE_ORDER.map((role) => {
-              const definition = ROLE_DEFINITIONS[role];
-              return (
-                <div
-                  key={role}
-                  className="rounded-2xl border border-surface-600 bg-surface-800/70 p-4 shadow-panel"
-                >
-                  <UsersRound
-                    size={18}
-                    className={`mb-3 ${definition.accentClass}`}
-                  />
-                  <p className="font-semibold text-ink">{definition.label}</p>
-                  <p className="mt-1 text-xs leading-5 text-ink-subtle">
-                    {definition.headline}
-                  </p>
+            <h1 className="text-4xl font-medium leading-[1.15] tracking-tight xl:text-5xl">
+              Build with confidence.
+              <br />
+              <span className="text-emerald-300">Ship with control.</span>
+            </h1>
+            <p className="mt-6 max-w-md text-sm leading-7 text-slate-400">
+              One workspace to understand CI/CD failures, generate workflows,
+              and turn recommendations into reviewed changes.
+            </p>
+            <div className="mt-10 space-y-0">
+              {[
+                {
+                  icon: SearchCode,
+                  title: "Understand what went wrong",
+                  text: "AI-assisted diagnosis from your build logs.",
+                },
+                {
+                  icon: GitPullRequest,
+                  title: "Turn insight into a change",
+                  text: "Generate workflows and propose fixes through PRs.",
+                },
+                {
+                  icon: ShieldCheck,
+                  title: "Keep the final say",
+                  text: "Review high-risk actions before they execute.",
+                },
+              ].map(({ icon: Icon, title, text }, index) => (
+                <div key={title} className="flex gap-4">
+                  <div className="flex flex-col items-center">
+                    <span className="rounded-xl border border-white/10 bg-white/5 p-3 text-emerald-300">
+                      <Icon size={20} strokeWidth={1.7} />
+                    </span>
+                    {index < 2 && <span className="login-flow-line" />}
+                  </div>
+                  <div className="pt-1">
+                    <p className="text-sm font-medium text-slate-100">
+                      {title}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-slate-400">
+                      {text}
+                    </p>
+                  </div>
                 </div>
-              );
-            })}
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 border-t border-white/10 pt-6 text-xs text-slate-400">
+            <ShieldCheck size={15} className="text-emerald-300" />
+            AI assistance. Human control. A clear audit trail.
           </div>
         </section>
 
@@ -194,19 +215,19 @@ export default function LoginPage() {
                 Smart DevOps Assistant
               </h1>
               <p className="mt-1 text-sm text-ink-subtle">
-                Role-governed infrastructure control plane
+                Your AI-assisted delivery workspace
               </p>
             </div>
 
-            <div className="glass-panel p-6 sm:p-8">
+            <div className="rounded-2xl border border-surface-600 bg-surface-800 p-6 shadow-panel sm:p-8">
               <div className="mb-7">
                 <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary-700 dark:text-primary-300">
                   {mode === "signup" ? "Request safe access" : "Welcome back"}
                 </p>
                 <h2 className="mt-3 text-2xl font-semibold text-ink">
                   {mode === "signup"
-                    ? "Create a role-limited account"
-                    : "Sign in to your role workspace"}
+                    ? "Create your workspace account"
+                    : "Welcome to your workspace"}
                 </h2>
                 <p className="mt-2 text-sm text-ink-subtle">
                   {mode === "signup"
@@ -233,7 +254,7 @@ export default function LoginPage() {
               </div>
 
               {mode === "login" && (
-                <div className="mb-6 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="mb-6 grid grid-cols-2 gap-2">
                   {ROLE_ORDER.map((role) => {
                     const definition = ROLE_DEFINITIONS[role];
                     const credentials = DEMO_CREDENTIALS[role];
@@ -243,8 +264,9 @@ export default function LoginPage() {
                         key={role}
                         type="button"
                         onClick={() => setSelectedLoginRole(role)}
+                        aria-pressed={active}
                         className={clsx(
-                          "rounded-2xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-panel",
+                          "rounded-lg border p-3 text-left transition hover:border-primary-500/50",
                           active
                             ? `${definition.badgeClass} shadow-panel`
                             : "border-surface-600 bg-surface-900/60 text-ink-muted hover:bg-surface-800",
@@ -259,9 +281,7 @@ export default function LoginPage() {
                             className={definition.accentClass}
                           />
                         </div>
-                        <p className="mt-1 text-xs leading-5 opacity-80">
-                          {credentials.note}
-                        </p>
+                        <p className="sr-only">{credentials.note}</p>
                       </button>
                     );
                   })}
@@ -269,7 +289,7 @@ export default function LoginPage() {
               )}
 
               {mode === "signup" && (
-                <div className="mb-6 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="mb-6 grid grid-cols-2 gap-2">
                   {SIGNUP_ROLES.map((role) => {
                     const definition = ROLE_DEFINITIONS[role];
                     const active = signupRole === role;
@@ -278,8 +298,9 @@ export default function LoginPage() {
                         key={role}
                         type="button"
                         onClick={() => setSignupRole(role)}
+                        aria-pressed={active}
                         className={clsx(
-                          "rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-panel",
+                          "rounded-lg border p-4 text-left transition hover:border-primary-500/50",
                           active
                             ? `${definition.badgeClass} shadow-panel`
                             : "border-surface-600 bg-surface-900/60 text-ink-muted hover:bg-surface-800",
@@ -289,7 +310,7 @@ export default function LoginPage() {
                           {definition.label}
                         </p>
                         <p className="mt-1 text-xs leading-5 opacity-80">
-                          {definition.description}
+                          {definition.headline}
                         </p>
                       </button>
                     );
@@ -298,7 +319,10 @@ export default function LoginPage() {
               )}
 
               {error && (
-                <div className="mb-5 rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200">
+                <div
+                  role="alert"
+                  className="mb-5 rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200"
+                >
                   {error}
                 </div>
               )}
@@ -428,7 +452,7 @@ export default function LoginPage() {
                   ) : mode === "signup" ? (
                     <UserRound size={16} />
                   ) : (
-                    <ShieldCheck size={16} />
+                    <ArrowRight size={16} />
                   )}
                   {submitting
                     ? mode === "signup"
@@ -436,7 +460,7 @@ export default function LoginPage() {
                       : "Signing in…"
                     : mode === "signup"
                       ? `Create ${ROLE_DEFINITIONS[signupRole].label} account`
-                      : `Sign in as ${ROLE_DEFINITIONS[selectedLoginRole].label}`}
+                      : "Sign in to workspace"}
                 </button>
               </form>
 
