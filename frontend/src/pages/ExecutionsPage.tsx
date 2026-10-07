@@ -1,5 +1,7 @@
 import { getDebugHint, getUserFriendlyError } from "@/lib/errorMessages";
 import { executionService } from "@/services/api";
+import { useAuthStore } from "@/store/authStore";
+import type { User } from "@/types";
 import { formatDistanceToNow } from "date-fns";
 import {
   Activity,
@@ -7,6 +9,8 @@ import {
   CheckCircle,
   Clock,
   Loader,
+  RefreshCw,
+  Search,
   X,
   XCircle,
 } from "lucide-react";
@@ -22,6 +26,8 @@ interface Execution {
   details?: string;
   started_at?: string;
   completed_at?: string;
+  approval_decided_by?: string | null;
+  approval_status?: string | null;
 }
 
 interface Filters {
@@ -90,7 +96,15 @@ const relativeTime = (value?: string) => {
 };
 
 export default function ExecutionsPage() {
+  const user = useAuthStore((state) => state.user);
+  return <ExecutionsContent key={`${user?.id}:${user?.role}`} user={user} />;
+}
+
+function ExecutionsContent({ user }: { user: User | null }) {
+  const isAdmin = user?.role === "admin";
   const [executions, setExecutions] = useState<Execution[]>([]);
+  const [actorInput, setActorInput] = useState("");
+  const [refresh, setRefresh] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filters, setFilters] = useState<Filters>({
@@ -100,31 +114,35 @@ export default function ExecutionsPage() {
     days: 7,
   });
 
-  const fetchExecutions = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const data = await executionService.list({
-        tool: filters.tool,
-        status: filters.status,
-        actor: filters.actor,
-        days: filters.days,
-      });
-      setExecutions(Array.isArray(data) ? data : []);
-    } catch (err: any) {
-      setExecutions([]);
-      setError(getUserFriendlyError(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchExecutions();
-  }, [filters]);
+    let active = true;
+    const fetchExecutions = async () => {
+      setLoading(true);
+      setError("");
+      setExecutions([]);
+      try {
+        const data = await executionService.list({
+          tool: filters.tool,
+          status: filters.status,
+          actor: isAdmin ? filters.actor : null,
+          days: filters.days,
+        });
+        if (active) setExecutions(Array.isArray(data) ? data : []);
+      } catch (err: unknown) {
+        if (active) setError(getUserFriendlyError(err));
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    void fetchExecutions();
+    return () => {
+      active = false;
+    };
+  }, [filters, isAdmin, user?.id, refresh]);
 
   const handleClearFilters = () => {
     setFilters({ tool: null, status: null, actor: null, days: 7 });
+    setActorInput("");
   };
 
   const hasActiveFilters = filters.tool || filters.status || filters.actor;
@@ -137,9 +155,13 @@ export default function ExecutionsPage() {
             <Activity size={19} className="text-blue-600 dark:text-blue-300" />
           </div>
           <div>
-            <h1 className="text-base font-semibold text-ink">Audit Log</h1>
+            <h1 className="text-base font-semibold text-ink">
+              {isAdmin ? "Team audit log" : "Your audit log"}
+            </h1>
             <p className="text-xs text-ink-subtle">
-              Recent model, GitHub, approval, and agent actions
+              {isAdmin
+                ? "All members and system actions, with the account responsible for each record"
+                : "Only actions recorded under your account are shown here"}
             </p>
           </div>
         </div>
@@ -147,6 +169,7 @@ export default function ExecutionsPage() {
         {/* Filters */}
         <div className="grid gap-3 sm:grid-cols-2 xl:flex xl:flex-wrap xl:items-center">
           <select
+            aria-label="Filter by tool"
             value={filters.tool || ""}
             onChange={(e) =>
               setFilters({ ...filters, tool: e.target.value || null })
@@ -162,6 +185,7 @@ export default function ExecutionsPage() {
           </select>
 
           <select
+            aria-label="Filter by status"
             value={filters.status || ""}
             onChange={(e) =>
               setFilters({ ...filters, status: e.target.value || null })
@@ -177,6 +201,7 @@ export default function ExecutionsPage() {
           </select>
 
           <select
+            aria-label="Filter by time period"
             value={filters.days.toString()}
             onChange={(e) =>
               setFilters({ ...filters, days: parseInt(e.target.value) })
@@ -187,6 +212,40 @@ export default function ExecutionsPage() {
             <option value="7">Last 7 days</option>
             <option value="30">Last 30 days</option>
           </select>
+
+          {isAdmin && (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                setFilters({ ...filters, actor: actorInput.trim() || null });
+              }}
+              className="flex gap-2"
+            >
+              <input
+                aria-label="Actor username"
+                placeholder="Actor username (exact)"
+                value={actorInput}
+                onChange={(event) => setActorInput(event.target.value)}
+                className="input-field min-h-10 min-w-0 px-3 py-2"
+              />
+              <button
+                type="submit"
+                className="btn-secondary"
+                aria-label="Filter by actor"
+              >
+                <Search size={15} />
+              </button>
+            </form>
+          )}
+          <button
+            type="button"
+            onClick={() => setRefresh((value) => value + 1)}
+            disabled={loading}
+            className="btn-secondary"
+          >
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+            Refresh
+          </button>
 
           {hasActiveFilters && (
             <button
@@ -260,9 +319,20 @@ export default function ExecutionsPage() {
                     {statusBadge(ex.status)}
                   </div>
                 </div>
-                {ex.requested_by && (
+                {isAdmin && ex.requested_by && (
                   <p className="text-xs text-ink-subtle sm:ml-8">
-                    By: {ex.requested_by}
+                    Actor / requester:{" "}
+                    <span className="font-medium text-ink">
+                      {ex.requested_by}
+                    </span>
+                  </p>
+                )}
+                {ex.approval_decided_by && (
+                  <p className="text-xs text-ink-subtle sm:ml-8">
+                    Approval {ex.approval_status}:{" "}
+                    <span className="font-medium text-ink">
+                      {ex.approval_decided_by}
+                    </span>
                   </p>
                 )}
               </div>

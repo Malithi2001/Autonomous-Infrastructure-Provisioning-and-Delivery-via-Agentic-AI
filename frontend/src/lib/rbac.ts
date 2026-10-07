@@ -37,6 +37,7 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
     headline: "Production operations and approvals",
     permissions: [
       "agent:chat",
+      "agents:orchestrate",
       "cicd:read",
       "cicd:generate",
       "failures:predict",
@@ -69,6 +70,7 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
     headline: "Diagnostics and staging workflow",
     permissions: [
       "agent:chat",
+      "approvals:read",
       "agents:orchestrate",
       "cicd:read",
       "cicd:generate",
@@ -87,9 +89,9 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
     role: "viewer",
     label: "Viewer",
     description:
-      "Read-only observer for safe AI chat without operational or approval access.",
+      "Read-only observer for safe AI chat, personal activity, and the status of their own approval requests.",
     headline: "Read-only operational insight",
-    permissions: ["agent:chat"],
+    permissions: ["agent:chat", "approvals:read", "executions:read"],
     badgeClass:
       "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200",
     accentClass: "text-emerald-600 dark:text-emerald-300",
@@ -165,7 +167,7 @@ export function hasPermission(
 }
 
 export function defaultPathForRole(role?: string | null): string {
-  return normalizeRole(role) === "admin" ? "/dashboard" : "/chat";
+  return role ? "/dashboard" : "/chat";
 }
 
 export function canAccessPath(

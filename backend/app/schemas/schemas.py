@@ -123,6 +123,8 @@ class ExecutionOut(BaseModel):
     started_at: datetime
     completed_at: Optional[datetime] = None
     source: Optional[str] = None
+    approval_decided_by: Optional[str] = None
+    approval_status: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

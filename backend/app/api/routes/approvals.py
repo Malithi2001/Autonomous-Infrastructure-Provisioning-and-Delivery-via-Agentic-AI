@@ -16,7 +16,7 @@ import json
 import re
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -25,10 +25,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.logging import logger
-from app.core.security import require_permission
+from app.core.security import has_permission, require_permission
 from app.models.models import ApprovalRequest, Execution
 from app.schemas.schemas import ApprovalDecision, ApprovalRequestOut
 from app.services import audit_service
+from app.services.activity_visibility_service import activity_actor, can_view_all_activity
 from app.services.fix_pr_service import FixPRServiceError, create_fix_pr_for_failure, mark_fix_pr_rejected
 from app.services.github_app_service import GitHubAppError, get_installation_access_token, get_installation_for_repo
 
@@ -130,11 +131,17 @@ async def _github_auth_for_repo(db: AsyncSession, repo_full_name: str) -> tuple[
 @router.get("/", response_model=list[ApprovalRequestOut], include_in_schema=False)
 async def list_pending_approvals(
     status_filter: Optional[str] = "pending",
+    scope: Literal["all", "mine"] = "all",
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_permission("approvals:read")),
 ):
     """List approval requests (default: pending only)."""
     stmt = select(ApprovalRequest).order_by(ApprovalRequest.created_at.desc())
+    # Operators still need the shared queue to perform authorized reviews.
+    # Personal dashboards request "mine"; members without decision permission
+    # can only read their own requests even if they explicitly request "all".
+    if scope == "mine" or not has_permission(current_user.get("role"), "approvals:decide"):
+        stmt = stmt.where(ApprovalRequest.requested_by == activity_actor(current_user))
     if status_filter:
         stmt = stmt.where(ApprovalRequest.status == status_filter)
     result = await db.execute(stmt)
@@ -148,7 +155,13 @@ async def get_approval(
     current_user: dict = Depends(require_permission("approvals:read")),
 ):
     """Fetch a single approval request by ID."""
-    record = await db.get(ApprovalRequest, str(approval_id))
+    stmt = select(ApprovalRequest).where(ApprovalRequest.id == str(approval_id))
+    if not can_view_all_activity(current_user) and not has_permission(
+        current_user.get("role"), "approvals:decide"
+    ):
+        stmt = stmt.where(ApprovalRequest.requested_by == activity_actor(current_user))
+    result = await db.execute(stmt)
+    record = result.scalar_one_or_none()
     if not record:
         raise HTTPException(status_code=404, detail="Approval request not found.")
     return record

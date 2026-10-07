@@ -248,8 +248,8 @@ export interface AgentTraceStep {
 }
 
 export const approvalService = {
-  list: async () => {
-    const res = await api.get("/approvals");
+  list: async (scope: "all" | "mine" = "all") => {
+    const res = await api.get("/approvals", { params: { scope } });
     return res.data;
   },
   decide: async (approvalId: string, approved: boolean, note?: string) => {

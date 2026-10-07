@@ -47,7 +47,7 @@ ROLE_DESCRIPTIONS: dict[UserRole, str] = {
         "Builder workflow. Can chat with the agent, inspect systems, and use lower-risk development/staging tools."
     ),
     UserRole.VIEWER: (
-        "Read-only observer. Can ask the agent for safe insight without operational or approval access."
+        "Read-only observer. Can use safe AI chat and track their own activity and approval requests."
     ),
 }
 
@@ -63,6 +63,7 @@ ROLE_PERMISSIONS: dict[UserRole, list[str]] = {
     ],
     UserRole.DEVELOPER: [
         "agent:chat",
+        "approvals:read",
         "agents:orchestrate",
         "cicd:read",
         "cicd:generate",

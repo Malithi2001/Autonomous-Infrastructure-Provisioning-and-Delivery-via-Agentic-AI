@@ -29,7 +29,7 @@ import {
   Workflow,
   type LucideIcon,
 } from "lucide-react";
-import { hasPermission } from "@/lib/rbac";
+import { getRoleDefinition, hasPermission } from "@/lib/rbac";
 import {
   approvalService,
   executionService,
@@ -39,6 +39,7 @@ import {
   type WorkflowFailure,
 } from "@/services/api";
 import { useAuthStore } from "@/store/authStore";
+import type { User } from "@/types";
 
 interface Approval {
   id: string;
@@ -48,9 +49,11 @@ interface Approval {
   risk_level?: string;
   created_at?: string;
   status: string;
+  requested_by?: string;
 }
 interface Execution {
   id: string;
+  requested_by?: string;
   tool_name?: string;
   status: string;
   summary: string;
@@ -178,6 +181,10 @@ const quickActions = [
 
 export default function DashboardPage() {
   const user = useAuthStore((state) => state.user);
+  return <DashboardContent key={`${user?.id}:${user?.role}`} user={user} />;
+}
+
+function DashboardContent({ user }: { user: User | null }) {
   const [loading, setLoading] = useState(true);
   const [unavailable, setUnavailable] = useState<DataKey[]>([]);
   const [updated, setUpdated] = useState<Date | null>(null);
@@ -188,8 +195,10 @@ export default function DashboardPage() {
     executions: [],
   });
   const requestId = useRef(0);
+  const isAdmin = user?.role === "admin";
   const canReadApprovals = hasPermission(user?.role, "approvals:read");
-  const canReadFailures = hasPermission(user?.role, "workflow_failures:read");
+  const canReadFailures =
+    isAdmin && hasPermission(user?.role, "workflow_failures:read");
   const canReadExecutions = hasPermission(user?.role, "executions:read");
   const can = (permission: string) => hasPermission(user?.role, permission);
 
@@ -197,8 +206,10 @@ export default function DashboardPage() {
     const id = ++requestId.current;
     setLoading(true);
     const [status, approvals, failures, executions] = await Promise.allSettled([
-      healthService.status(),
-      canReadApprovals ? approvalService.list() : Promise.resolve([]),
+      isAdmin ? healthService.status() : Promise.resolve(null),
+      canReadApprovals
+        ? approvalService.list(isAdmin ? "all" : "mine")
+        : Promise.resolve([]),
       canReadFailures ? workflowFailureService.list(5) : Promise.resolve([]),
       canReadExecutions
         ? executionService.list({ limit: 5, days: 7 })
@@ -231,7 +242,7 @@ export default function DashboardPage() {
     });
     setUpdated(new Date());
     setLoading(false);
-  }, [canReadApprovals, canReadFailures, canReadExecutions]);
+  }, [canReadApprovals, canReadFailures, canReadExecutions, isAdmin, user?.id]);
 
   useEffect(() => {
     void loadDashboard();
@@ -326,6 +337,249 @@ export default function DashboardPage() {
         detail="Refresh to try again. Other available data is shown normally."
       />
     ) : null;
+
+  if (!isAdmin) {
+    const role = getRoleDefinition(user?.role);
+    const ownMetrics = [
+      {
+        label: "Your recent actions",
+        count: data.executions.length,
+        key: "executions" as DataKey,
+        detail: "Latest 5 actions · past 7 days",
+        icon: History,
+      },
+      {
+        label: "Completed actions",
+        count: data.executions.filter((item) =>
+          ["completed", "success"].includes(item.status),
+        ).length,
+        key: "executions" as DataKey,
+        detail: "Within your recent activity",
+        icon: CheckCircle2,
+      },
+      {
+        label: "Failed actions",
+        count: data.executions.filter((item) => item.status === "failed")
+          .length,
+        key: "executions" as DataKey,
+        detail: "Within your recent activity",
+        icon: TriangleAlert,
+      },
+      {
+        label: "Your pending requests",
+        count: data.approvals.length,
+        key: "approvals" as DataKey,
+        detail: "Your requests waiting for review",
+        icon: ShieldCheck,
+      },
+    ];
+    return (
+      <div className="h-full overflow-y-auto bg-surface-900">
+        <div className="mx-auto max-w-[1440px] space-y-6 px-4 py-6 md:px-8 md:py-8">
+          <header className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="mb-2 text-xs font-medium text-primary-700 dark:text-primary-300">
+                {role.label} workspace
+              </p>
+              <h1 className="text-2xl font-semibold tracking-tight text-ink">
+                Your dashboard
+              </h1>
+              <p className="mt-2 text-sm text-ink-subtle">
+                Welcome, {user?.username}. Your actions, requests, and next
+                steps are here.
+              </p>
+            </div>
+            <button
+              onClick={loadDashboard}
+              disabled={loading}
+              className="btn-secondary"
+            >
+              <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+              Refresh
+            </button>
+          </header>
+          <section className="card flex flex-wrap items-center justify-between gap-4 p-5">
+            <div>
+              <h2 className="text-sm font-semibold text-ink">
+                Your workspace, your activity
+              </h2>
+              <p className="mt-1 text-xs leading-5 text-ink-subtle">
+                This dashboard and your audit log show only actions recorded
+                under your account. {role.headline}.
+              </p>
+            </div>
+            <Link to="/chat" className="btn-primary">
+              Open agent chat <ArrowRight size={14} />
+            </Link>
+          </section>
+          {unavailable.length > 0 && (
+            <div
+              role="alert"
+              className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-800 dark:text-amber-200"
+            >
+              Some of your activity could not be loaded. Refresh to try again;
+              unavailable counts are shown as a dash.
+            </div>
+          )}
+          <section
+            aria-label="Your activity metrics"
+            className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
+          >
+            {ownMetrics.map(({ label, count, key, detail, icon: Icon }) => (
+              <div key={label} className="card p-5">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xs font-medium text-ink-subtle">
+                    {label}
+                  </h2>
+                  <Icon
+                    size={17}
+                    className="text-primary-600 dark:text-primary-300"
+                  />
+                </div>
+                <p className="mt-3 text-3xl font-semibold text-ink">
+                  {value(
+                    key,
+                    key === "approvals" ? canReadApprovals : canReadExecutions,
+                    count,
+                  )}
+                </p>
+                <p className="mt-2 text-[11px] text-ink-subtle">
+                  {unavailable.includes(key) ? "Data unavailable" : detail}
+                </p>
+              </div>
+            ))}
+          </section>
+          <section
+            aria-label="Available delivery tasks"
+            className="grid gap-3 md:grid-cols-3"
+          >
+            {quickActions
+              .filter((action) => can(action.permission))
+              .map(({ title, detail, to, icon: Icon, color }) => (
+                <Link key={title} to={to} className="action-card">
+                  <span className={`mb-3 inline-flex rounded-lg p-2 ${color}`}>
+                    <Icon size={19} />
+                  </span>
+                  <h2 className="text-sm font-semibold text-ink">{title}</h2>
+                  <p className="mt-1 text-xs leading-5 text-ink-subtle">
+                    {detail}
+                  </p>
+                </Link>
+              ))}
+          </section>
+          <div className="grid items-start gap-5 xl:grid-cols-2">
+            <Panel
+              title="Your recent activity"
+              detail="Latest 5 actions recorded under your account · last 7 days"
+              to="/executions"
+            >
+              {loading ? (
+                <Loading />
+              ) : (
+                unavailablePanel("executions") ||
+                (data.executions.length ? (
+                  <div className="divide-y divide-surface-600">
+                    {data.executions.map((execution) => (
+                      <Link
+                        key={execution.id}
+                        to="/executions"
+                        className="flex items-start gap-3 px-5 py-4 hover:bg-surface-700/50"
+                      >
+                        <History
+                          size={17}
+                          className="mt-1 shrink-0 text-ink-subtle"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="break-words text-sm font-medium text-ink">
+                            {execution.summary ||
+                              execution.tool_name ||
+                              "Your action"}
+                          </p>
+                          <p className="mt-1 text-xs text-ink-subtle">
+                            {execution.tool_name || "Agent"} ·{" "}
+                            {relativeTime(execution.started_at)}
+                          </p>
+                        </div>
+                        <span
+                          className={
+                            execution.status === "failed"
+                              ? "badge-error"
+                              : "badge-info"
+                          }
+                        >
+                          {execution.status}
+                        </span>
+                      </Link>
+                    ))}
+                  </div>
+                ) : (
+                  <Empty
+                    icon={History}
+                    title="No activity recorded yet"
+                    detail="Ask the agent a question or use an available delivery tool to begin."
+                  />
+                ))
+              )}
+            </Panel>
+            <Panel
+              title="Your pending requests"
+              detail="Actions you requested that are waiting for approval"
+              to="/approvals"
+            >
+              {loading ? (
+                <Loading />
+              ) : (
+                unavailablePanel("approvals") ||
+                (data.approvals.length ? (
+                  <div className="divide-y divide-surface-600">
+                    {data.approvals.slice(0, 5).map((approval) => (
+                      <Link
+                        key={approval.id}
+                        to="/approvals"
+                        className="block px-5 py-4 hover:bg-surface-700/50"
+                      >
+                        <p className="text-sm font-medium text-ink">
+                          {approval.summary ||
+                            approval.action ||
+                            "Your approval request"}
+                        </p>
+                        <p className="mt-1 text-xs text-ink-subtle">
+                          {relativeTime(approval.created_at)} ·{" "}
+                          {approval.status}
+                        </p>
+                      </Link>
+                    ))}
+                  </div>
+                ) : (
+                  <Empty
+                    icon={ShieldCheck}
+                    title="No pending requests"
+                    detail="Your high-risk action requests will appear here while awaiting review."
+                  />
+                ))
+              )}
+            </Panel>
+          </div>
+          {can("approvals:decide") && (
+            <section className="card flex flex-wrap items-center justify-between gap-4 p-5">
+              <div>
+                <h2 className="text-sm font-semibold text-ink">
+                  Review requests as an operator
+                </h2>
+                <p className="mt-1 text-xs text-ink-subtle">
+                  Your approval role lets you review the shared queue on the
+                  approvals page.
+                </p>
+              </div>
+              <Link to="/approvals" className="btn-secondary">
+                Open review queue <ArrowUpRight size={14} />
+              </Link>
+            </section>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full overflow-y-auto bg-surface-900">
@@ -554,6 +808,7 @@ export default function DashboardPage() {
                             "Action requires approval"}
                         </p>
                         <p className="mt-1 text-xs text-ink-subtle">
+                          Requested by: {approval.requested_by || "Unknown"} ·{" "}
                           {relativeTime(approval.created_at)}
                         </p>
                       </div>
@@ -635,7 +890,7 @@ export default function DashboardPage() {
           </Panel>
           <Panel
             title="Recent activity"
-            detail="An audit trail of your automation · last 7 days"
+            detail="All members and system actions · last 7 days"
             to={canReadExecutions ? "/executions" : undefined}
           >
             {!canReadExecutions ? (
@@ -670,6 +925,7 @@ export default function DashboardPage() {
                             "Agent action"}
                         </p>
                         <p className="mt-1 text-xs text-ink-subtle">
+                          Actor: {execution.requested_by || "Unknown"} ·{" "}
                           {relativeTime(execution.started_at)}
                         </p>
                       </div>

@@ -1,4 +1,7 @@
 import { getDebugHint, getUserFriendlyError } from "@/lib/errorMessages";
+import { hasPermission } from "@/lib/rbac";
+import { useAuthStore } from "@/store/authStore";
+import type { User } from "@/types";
 import { approvalService } from "@/services/api";
 import { formatDistanceToNow } from "date-fns";
 import {
@@ -75,6 +78,12 @@ function DetailRow({
 }
 
 export default function ApprovalsPage() {
+  const user = useAuthStore((state) => state.user);
+  return <ApprovalsContent key={`${user?.id}:${user?.role}`} user={user} />;
+}
+
+function ApprovalsContent({ user }: { user: User | null }) {
+  const canDecide = hasPermission(user?.role, "approvals:decide");
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -98,7 +107,7 @@ export default function ApprovalsPage() {
   }, []);
 
   const decide = async (id: string, approved: boolean) => {
-    if (decidingId) return;
+    if (decidingId || !canDecide) return;
     setDecidingId(id);
     setError("");
     try {
@@ -122,9 +131,13 @@ export default function ApprovalsPage() {
             />
           </div>
           <div>
-            <h1 className="text-base font-semibold text-ink">HITL Approvals</h1>
+            <h1 className="text-base font-semibold text-ink">
+              {canDecide ? "Approval review queue" : "Your approval requests"}
+            </h1>
             <p className="text-xs text-ink-subtle">
-              Human-in-the-loop approval gate for high-risk operations
+              {canDecide
+                ? "Review high-risk requests before execution"
+                : "Track your requests waiting for an operator or admin to review"}
             </p>
           </div>
         </div>
@@ -257,7 +270,7 @@ export default function ApprovalsPage() {
                     </div>
                   )}
 
-                  {a.status === "pending" && (
+                  {a.status === "pending" && canDecide && (
                     <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                       <button
                         onClick={() => decide(a.id, true)}
