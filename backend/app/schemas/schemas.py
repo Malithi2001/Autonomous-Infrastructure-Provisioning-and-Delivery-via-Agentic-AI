@@ -71,7 +71,7 @@ class AdminCreateUser(BaseModel):
     email: EmailStr
     username: str = Field(..., min_length=3, max_length=50)
     password: str = Field(..., min_length=8)
-    role: Literal[UserRole.OPERATOR, UserRole.DEVELOPER, UserRole.VIEWER] = UserRole.DEVELOPER
+    role: Literal[UserRole.DEVELOPER] = UserRole.DEVELOPER
     is_active: bool = True
 
 

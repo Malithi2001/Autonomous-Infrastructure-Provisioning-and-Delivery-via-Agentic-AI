@@ -185,8 +185,8 @@ function ApprovalsContent({ user }: { user: User | null }) {
               {canReviewShared
                 ? "Review high-risk requests before execution"
                 : canReviewOwn
-                  ? "Approve or reject your own work. Privileged actions need an operator or admin."
-                  : "Track your requests waiting for an operator or admin to review"}
+                  ? "Approve or reject your own work. Privileged actions need an admin."
+                  : "Track your requests waiting for an admin to review"}
             </p>
           </div>
         </div>
@@ -340,7 +340,7 @@ function ApprovalsContent({ user }: { user: User | null }) {
                     canDecideRequest(a, false) &&
                     !canDecideRequest(a, true) && (
                       <p className="mb-3 text-xs text-ink-subtle">
-                        An operator or administrator must approve this action.
+                        An administrator must approve this action.
                         You can reject your request.
                       </p>
                     )}

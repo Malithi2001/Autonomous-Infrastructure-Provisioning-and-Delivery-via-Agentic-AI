@@ -5,7 +5,7 @@ import ssl
 from typing import Any, AsyncGenerator
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from sqlalchemy import or_, select, text
+from sqlalchemy import String, cast, or_, select, text, update
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
@@ -84,6 +84,7 @@ async def init_db() -> None:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
             await ensure_schema_compatibility(conn)
+            await migrate_retired_roles(conn)
         await ensure_default_admin()
     except Exception as exc:
         logger.warning("database.init.skipped", error=str(exc))
@@ -118,6 +119,27 @@ async def ensure_schema_compatibility(conn) -> None:
             )
 
 
+async def migrate_retired_roles(conn) -> None:
+    """Preserve legacy accounts while moving them to Developer access.
+
+    Cast the stored role before reading it: the current ORM enum intentionally
+    cannot deserialize retired values. Revoke both access and refresh sessions
+    in the same startup transaction. Repeated startups are a no-op.
+    """
+    from app.models.models import User, UserSession
+
+    legacy_users = select(User.id).where(cast(User.role, String).in_(["operator", "viewer"]))
+    await conn.execute(
+        update(UserSession).where(UserSession.user_id.in_(legacy_users)).values(is_revoked=True)
+    )
+    result = await conn.execute(
+        update(User).where(cast(User.role, String).in_(["operator", "viewer"]))
+        .values(role="developer", token_version=User.token_version + 1)
+    )
+    if result.rowcount:
+        logger.info("database.roles.migrated", affected_accounts=result.rowcount, target_role="developer")
+
+
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency: yields an async DB session."""
     async with AsyncSessionLocal() as session:
@@ -143,24 +165,10 @@ def _demo_users() -> list[dict[str, Any]]:
             "role": UserRole.ADMIN,
         },
         {
-            "email": "operator@devops.example.com",
-            "legacy_email": "operator@devops.local",
-            "username": "operator",
-            "password": "operator123",
-            "role": UserRole.OPERATOR,
-        },
-        {
             "email": "devops.engineer@example.com",
             "username": "devops.engineer",
             "password": "developer123",
             "role": UserRole.DEVELOPER,
-        },
-        {
-            "email": "viewer@company.example.com",
-            "legacy_email": "viewer@company.local",
-            "username": "viewer",
-            "password": "viewer123",
-            "role": UserRole.VIEWER,
         },
     ]
 

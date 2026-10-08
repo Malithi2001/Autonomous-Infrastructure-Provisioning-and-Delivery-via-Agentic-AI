@@ -147,7 +147,7 @@ function FailureDetails({
                   )}
                 {!canCreateFixPr && !hasFixPr && (
                   <p className="text-xs text-ink-subtle">
-                    Operator or admin access is required to create fix pull
+                    Admin access is required to create fix pull
                     requests.
                   </p>
                 )}

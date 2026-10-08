@@ -106,7 +106,6 @@ export interface RegisterRequest {
   email: string;
   username: string;
   password: string;
-  role: Extract<UserRole, "developer" | "viewer">;
 }
 
 export interface AdminCreateUserRequest {
@@ -151,14 +150,12 @@ export const authService = {
     email,
     username,
     password,
-    role,
   }: RegisterRequest): Promise<User> => {
     setInMemoryAccessToken(null);
     const res = await api.post<LoginResponse>("/auth/register", {
       email,
       username,
       password,
-      role,
     });
     setInMemoryAccessToken(res.data.access_token);
     return normalizeUser(res.data);

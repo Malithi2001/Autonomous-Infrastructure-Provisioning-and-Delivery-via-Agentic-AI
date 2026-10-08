@@ -4,7 +4,7 @@ Administrators manage accounts from **Users & roles → Members & access**. The
 directory includes account totals, role and status filters, name/email search,
 member creation, and an Activate or Deactivate action for each member.
 
-The Add member form supports operator, developer, and viewer roles. Additional
+The Add member form creates Developer accounts without a role selector. Additional
 admin accounts cannot be created through the UI, the admin provisioning API,
 or public registration. The initial administrator is bootstrapped on startup
 only when no administrator exists. Changing bootstrap configuration does not
@@ -19,8 +19,8 @@ create a second administrator. Existing administrators are retained.
    change** to cancel it. Closing the dialog leaves the request in the approval
    queue. Expired requests cannot execute.
 
-Only administrators can request or decide account changes. Operators can review
-their existing operational approval queue, but cannot decide account changes.
+Only administrators can request or decide account changes. Developers can
+review their own eligible work, but cannot decide account changes.
 An administrator cannot deactivate their own account. At least one active
 administrator must remain. Approval execution rechecks the account state and
 revision so a stale request cannot overwrite a later change. On PostgreSQL,
@@ -60,3 +60,21 @@ session revocation, reactivation, rejection/expiration, stale, repeated, and
 concurrent decisions, administrator safeguards, legacy registered-user tokens, WebSocket
 authentication, and upgrading an existing SQLite schema. These tests use
 isolated temporary and in-memory databases.
+
+## Two-role transition
+
+The supported roles are **Admin** and **Developer**. Public registration and
+member creation cannot assign Operator, Viewer, or another Admin. Login needs
+only email and password; the server determines access from the saved account.
+
+On the next backend startup, the compatibility migration converts existing
+Operator and Viewer accounts to Developer. This gives former Viewers Developer
+capabilities and removes former Operators’ shared administrative capabilities.
+Account IDs, usernames, activation status, and activity history are preserved.
+Access-token versions are incremented and refresh sessions revoked; affected
+members must sign in again. Repeated startups do not repeat the migration.
+Unknown and retired role claims are rejected rather than receiving default access.
+
+The public website is at `/`, with separate `/login` and `/signup` pages. New
+accounts receive Developer access automatically. Existing members return to
+their permitted requested page after signing in, or to `/dashboard`.

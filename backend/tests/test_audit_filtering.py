@@ -63,7 +63,7 @@ async def override_db(db_session: AsyncSession, monkeypatch):
     app.dependency_overrides.pop(get_db, None)
 
 
-def _auth_headers(role: str = "operator", username: str = "test_user") -> dict[str, str]:
+def _auth_headers(role: str = "admin", username: str = "test_user") -> dict[str, str]:
     token = create_access_token(
         {
             "sub": str(uuid.uuid4()),
@@ -166,7 +166,7 @@ async def test_audit_endpoint_filters_by_tool_and_success_alias(db_session: Asyn
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("role", ["operator", "developer", "viewer"])
+@pytest.mark.parametrize("role", ["developer"])
 @pytest.mark.parametrize("prefix", ["/api/v1/audit", "/api/v1/executions"])
 async def test_member_activity_is_owned_even_with_actor_override(db_session, role, prefix):
     own = await _seed_execution(db_session, tool_name="own_tool")
@@ -208,10 +208,10 @@ async def test_member_ownership_supports_subject_fallback_and_missing_identity_f
     own = await _seed_execution(db_session, tool_name="legacy_tool", requested_by=subject)
     await _seed_execution(db_session, tool_name="other_tool")
     with TestClient(app) as client:
-        token = create_access_token({"sub": subject, "role": "viewer"})
+        token = create_access_token({"sub": subject, "role": "developer"})
         response = client.get("/api/v1/audit", headers={"Authorization": f"Bearer {token}"})
         assert [item["id"] for item in response.json()] == [own.id]
-        token = create_access_token({"role": "viewer"})
+        token = create_access_token({"role": "developer"})
         headers = {"Authorization": f"Bearer {token}"}
         assert client.get("/api/v1/audit", headers=headers).status_code == 401
         assert client.get(f"/api/v1/executions/{own.id}", headers=headers).status_code == 401
@@ -230,7 +230,7 @@ async def _seed_approval(db_session, actor="test_user", **kwargs):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("role", ["developer", "viewer"])
+@pytest.mark.parametrize("role", ["developer"])
 async def test_members_only_see_their_own_approval_requests_and_scoped_decisions(db_session, role):
     own = await _seed_approval(db_session)
     other = await _seed_approval(db_session, "other_user")
@@ -244,14 +244,14 @@ async def test_members_only_see_their_own_approval_requests_and_scoped_decisions
             assert response.json()[0]["can_reject"] == (role == "developer")
         assert client.get(f"/api/v1/approvals/{own.id}", headers=headers).status_code == 200
         assert client.get(f"/api/v1/approvals/{other.id}", headers=headers).status_code == 404
-        target = own if role == "viewer" else other
+        target = other
         assert client.post(
             f"/api/v1/approvals/{target.id}/decide", json={"approved": True}, headers=headers,
-        ).status_code == (403 if role == "viewer" else 404)
+        ).status_code == 404
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("role", ["operator", "admin"])
+@pytest.mark.parametrize("role", ["admin"])
 async def test_approval_reviewers_keep_shared_queue_and_can_request_personal_scope(db_session, role):
     own = await _seed_approval(db_session)
     other = await _seed_approval(db_session, "other_user")

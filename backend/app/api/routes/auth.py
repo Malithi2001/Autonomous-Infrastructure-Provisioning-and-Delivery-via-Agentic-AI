@@ -199,7 +199,7 @@ async def _safe_audit_auth(
 @router.get("/roles", response_model=RolesResponse)
 async def get_roles():
     """Return role profiles for the login/signup UI."""
-    ordered = [UserRole.ADMIN, UserRole.OPERATOR, UserRole.DEVELOPER, UserRole.VIEWER]
+    ordered = [UserRole.ADMIN, UserRole.DEVELOPER]
     return {
         "roles": [role_profile(role) for role in ordered],
         "public_signup_roles": [role.value for role in sorted(PUBLIC_SIGNUP_ROLES, key=lambda role: role.value)],
@@ -211,8 +211,8 @@ async def register(payload: UserRegister, request: Request, response: Response, 
     """
     Public self-signup.
 
-    Only viewer/developer accounts can be created publicly. Operators must be
-    provisioned by an administrator. Additional admin creation is disabled.
+    Only developer accounts can be created publicly. Additional admin creation
+    is disabled.
     """
     requested_role = coerce_role(payload.role or UserRole.DEVELOPER)
     if requested_role not in PUBLIC_SIGNUP_ROLES:
@@ -227,7 +227,7 @@ async def register(payload: UserRegister, request: Request, response: Response, 
         await db.commit()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Public sign-up supports only viewer and developer accounts.",
+            detail="Public sign-up supports only developer accounts.",
         )
 
     user = await _create_user_record(
@@ -438,7 +438,7 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_permission("users:manage")),
 ):
-    """Admin-only provisioning of operator/developer/viewer accounts."""
+    """Admin-only provisioning of developer accounts."""
     role = coerce_role(payload.role)
     user = await _create_user_record(
         db,

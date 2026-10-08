@@ -11,13 +11,7 @@ import {
 } from "lucide-react";
 import { authService } from "@/services/api";
 import { getUserFriendlyError } from "@/lib/errorMessages";
-import { ROLE_DEFINITIONS, ROLE_ORDER } from "@/lib/rbac";
-import type { User, UserRole } from "@/types";
-
-type MemberRole = Exclude<UserRole, "admin">;
-const memberRoles = ROLE_ORDER.filter(
-  (role): role is MemberRole => role !== "admin",
-);
+import type { User } from "@/types";
 
 export function CreateUserDialog({
   open,
@@ -31,7 +25,6 @@ export function CreateUserDialog({
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<MemberRole>("developer");
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -56,7 +49,7 @@ export function CreateUserDialog({
         email: email.trim(),
         username: username.trim(),
         password,
-        role,
+        role: "developer",
       });
       onCreated(user);
       onOpenChange(false);
@@ -101,8 +94,8 @@ export function CreateUserDialog({
             Add a member
           </Dialog.Title>
           <Dialog.Description className="mt-2 text-sm leading-6 text-ink-subtle">
-            Create an operator, developer, or viewer account and choose the
-            access it needs.
+            Create a developer account with a personal workspace and access to
+            its own work.
           </Dialog.Description>
           {error && (
             <div
@@ -150,31 +143,6 @@ export function CreateUserDialog({
                   className="input-field px-3 py-2.5"
                   required
                 />
-              </div>
-              <div>
-                <label
-                  htmlFor="member-role"
-                  className="mb-1.5 block text-xs font-medium text-ink-muted"
-                >
-                  Workspace role
-                </label>
-                <select
-                  id="member-role"
-                  value={role}
-                  onChange={(event) =>
-                    setRole(event.target.value as MemberRole)
-                  }
-                  className="input-field px-3 py-2.5"
-                >
-                  {memberRoles.map((value) => (
-                    <option key={value} value={value}>
-                      {ROLE_DEFINITIONS[value].label}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-2 text-xs leading-5 text-ink-subtle">
-                  {ROLE_DEFINITIONS[role].description}
-                </p>
               </div>
               <div>
                 <label

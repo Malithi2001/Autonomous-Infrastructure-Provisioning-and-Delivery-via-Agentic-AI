@@ -53,14 +53,11 @@ Most browser-based clients use the cookie automatically. API clients (curl, SDKs
 
 | Role | Main Permissions | Use Case |
 | --- | --- | --- |
-| `viewer` | `agent:chat`, `approvals:read`, `logs:read`, `metrics:read`, `executions:read` | Read-only access for observability. |
-| `developer` | All viewer permissions + `metrics:read`, `executions:read` | Developer: view builds and logs. |
-| `operator` | All developer permissions + `logs:write`, `executions:write`, `approvals:read`, `approvals:decide` | Operator: approve high-risk actions, manage CI/CD. |
+| `developer` | CI/CD generation, repository workflow requests, own approvals, own execution history | Personal delivery workspace. |
 | `admin` | All permissions | Full system access. |
 
-- **Public sign-up**: Only `viewer` and `developer` roles.
-- **Member creation**: Admin-only, via `POST /api/v1/auth/users`, for operator,
-  developer, and viewer roles. Creating additional admin accounts is disabled;
+- **Public sign-up**: Developer accounts only; the role field can be omitted.
+- **Member creation**: Admin-only, via `POST /api/v1/auth/users`, for developer accounts. Creating additional admin accounts is disabled;
   the initial admin is bootstrapped when no administrator exists.
 
 ---
@@ -145,35 +142,39 @@ All error responses follow this format:
 {
   "roles": [
     {
-      "role": "viewer",
-      "label": "Viewer",
-      "description": "Read-only access to logs and workflow failures.",
-      "permissions": ["agent:chat", "approvals:read", "logs:read", "metrics:read", "executions:read"],
-      "can_self_signup": true
+      "role": "admin",
+      "label": "Admin",
+      "description": "Full platform owner. Can manage users, audit activity, approve changes, and use all agent tools.",
+      "permissions": [
+        "*"
+      ],
+      "can_self_signup": false
     },
     {
       "role": "developer",
       "label": "Developer",
-      "description": "CI/CD builder with execution permissions.",
-      "permissions": ["agent:chat", "logs:read", "metrics:read", "executions:read"],
+      "description": "Can build CI/CD workflows, review their own approval requests, and use development/staging tools.",
+      "permissions": [
+        "agent:chat",
+        "agents:orchestrate",
+        "approvals:decide:own",
+        "approvals:read",
+        "cicd:generate",
+        "cicd:read",
+        "deployments:staging",
+        "executions:read",
+        "failures:predict",
+        "logs:read",
+        "repositories:read",
+        "repositories:write",
+        "workflow_failures:read"
+      ],
       "can_self_signup": true
-    },
-    {
-      "role": "operator",
-      "label": "Operator",
-      "description": "Operator with approval and execution permissions.",
-      "permissions": ["agent:chat", "logs:read", "logs:write", "executions:read", "executions:write", "approvals:read", "approvals:decide"],
-      "can_self_signup": false
-    },
-    {
-      "role": "admin",
-      "label": "Administrator",
-      "description": "Full system access.",
-      "permissions": ["*"],
-      "can_self_signup": false
     }
   ],
-  "public_signup_roles": ["viewer", "developer"]
+  "public_signup_roles": [
+    "developer"
+  ]
 }
 ```
 
@@ -181,7 +182,7 @@ All error responses follow this format:
 
 ### `POST /api/v1/auth/register`
 
-**Purpose**: Create a public viewer/developer account and log in.
+**Purpose**: Create a public developer account and log in.
 
 **Method**: POST | **Path**: `/api/v1/auth/register`
 
@@ -368,9 +369,9 @@ All error responses follow this format:
   },
   {
     "id": "550e8400-e29b-41d4-a716-446655440001",
-    "email": "operator@example.com",
-    "username": "operator1",
-    "role": "operator",
+    "email": "member@example.com",
+    "username": "member1",
+    "role": "developer",
     "is_active": true,
     "created_at": "2026-06-01T08:30:00Z"
   }
@@ -383,7 +384,7 @@ All error responses follow this format:
 
 **Purpose**: Create a new user account (admin-only operation).
 
-Only `operator`, `developer`, and `viewer` roles are accepted. `admin` requests
+Only `developer` is accepted. `admin` requests
 return HTTP 422; existing administrator accounts are preserved.
 
 **Method**: POST | **Path**: `/api/v1/auth/users`
@@ -394,10 +395,10 @@ return HTTP 422; existing administrator accounts are preserved.
 
 ```json
 {
-  "email": "operator@example.com",
-  "username": "operator1",
+  "email": "member@example.com",
+  "username": "member1",
   "password": "secure_password_123",
-  "role": "operator",
+  "role": "developer",
   "is_active": true
 }
 ```
@@ -407,9 +408,9 @@ return HTTP 422; existing administrator accounts are preserved.
 ```json
 {
   "id": "550e8400-e29b-41d4-a716-446655440001",
-  "email": "operator@example.com",
-  "username": "operator1",
-  "role": "operator",
+  "email": "member@example.com",
+  "username": "member1",
+  "role": "developer",
   "is_active": true,
   "created_at": "2026-06-01T08:30:00Z"
 }
@@ -1133,7 +1134,7 @@ X-GitHub-Delivery: <delivery-uuid>
 
 **Method**: POST | **Path**: `/api/v1/approvals/{approval_id}/decide`
 
-**Auth**: Required permission `approvals:decide` (operator/admin only).
+**Auth**: Required permission `approvals:decide` (admin globally; developers for their own eligible requests).
 
 **Parameter**:
 - `approval_id` (UUID): Approval request ID.
@@ -1153,7 +1154,7 @@ X-GitHub-Delivery: <delivery-uuid>
 {
   "id": "approval-uuid-1",
   "status": "approved",
-  "decided_by": "operator@example.com",
+  "decided_by": "member@example.com",
   "decided_at": "2026-06-01T10:07:00Z",
   "decision_note": "Reviewed and approved. Workflow looks good.",
   "execution": {
@@ -1171,7 +1172,7 @@ X-GitHub-Delivery: <delivery-uuid>
 {
   "id": "approval-uuid-1",
   "status": "rejected",
-  "decided_by": "operator@example.com",
+  "decided_by": "member@example.com",
   "decided_at": "2026-06-01T10:07:00Z",
   "decision_note": "Rejected due to existing workflow.",
   "execution": {

@@ -98,7 +98,7 @@ class ChatMessage(Base):
 class ApprovalRequest(Base):
     """
     Created by the agent when it classifies an action as HIGH or CRITICAL risk.
-    The agent suspends execution until an operator/admin decides.
+    The agent suspends execution until an admin decides.
     """
     __tablename__ = "approval_requests"
 

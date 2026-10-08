@@ -31,7 +31,7 @@ async def developer_app(monkeypatch, tmp_path):
     async with sessions() as db:
         for name, role in [
             ("alice", UserRole.DEVELOPER), ("bob", UserRole.DEVELOPER),
-            ("admin", UserRole.ADMIN), ("operator", UserRole.OPERATOR), ("viewer", UserRole.VIEWER),
+            ("admin", UserRole.ADMIN),
         ]:
             user = User(email=f"{name}@example.com", username=name, role=role,
                         hashed_password="unused-test-password-hash", is_active=True)
@@ -206,7 +206,7 @@ async def test_developer_can_approve_own_safe_fix_pr(developer_app, monkeypatch)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("role", ["admin", "operator"])
+@pytest.mark.parametrize("role", ["admin"])
 async def test_shared_reviewers_keep_access_to_developer_work(developer_app, monkeypatch, role):
     client, sessions, identities = developer_app
     own = await seed_request(sessions)
@@ -220,19 +220,21 @@ async def test_shared_reviewers_keep_access_to_developer_work(developer_app, mon
 
 
 @pytest.mark.asyncio
-async def test_viewer_remains_read_only_and_cannot_make_cicd_changes(developer_app):
+@pytest.mark.parametrize("role", ["operator", "viewer", "unknown", ""])
+async def test_retired_or_unknown_roles_cannot_access_work(developer_app, role):
     client, sessions, identities = developer_app
-    approval_id = await seed_request(sessions, actor="viewer")
-    headers = auth_headers(identities, "viewer")
-    response = await client.get("/api/v1/approvals", headers=headers)
-    assert response.json()[0]["can_approve"] is response.json()[0]["can_reject"] is False
+    approval_id = await seed_request(sessions)
+    # Even correctly signed legacy claims cannot revive a removed role.
+    token = create_access_token({"sub": str(uuid4()), "username": "legacy", "role": role})
+    headers = {"Authorization": f"Bearer {token}"}
+    assert (await client.get("/api/v1/approvals", headers=headers)).status_code == 401
     for approved in (True, False):
         assert (await client.post(f"/api/v1/approvals/{approval_id}/decide", headers=headers,
-                                  json={"approved": approved})).status_code == 403
+                                  json={"approved": approved})).status_code == 401
     assert (await client.post("/api/v1/cicd/generate-workflow", headers=headers,
-                              json={"files": ["package.json"]})).status_code == 403
+                              json={"files": ["package.json"]})).status_code == 401
     assert (await client.post("/api/v1/repositories/create-workflow-pr", headers=headers,
-                              json={"repo_full_name": "example/demo"})).status_code == 403
+                              json={"repo_full_name": "example/demo"})).status_code == 401
 
 
 @pytest.mark.asyncio
@@ -248,7 +250,7 @@ async def test_expired_own_request_cannot_execute(developer_app):
 
 
 @pytest.mark.asyncio
-async def test_concurrent_developer_and_operator_decisions_execute_once(developer_app, monkeypatch):
+async def test_concurrent_developer_and_admin_decisions_execute_once(developer_app, monkeypatch):
     client, sessions, identities = developer_app
     approval_id = await seed_request(sessions, tool="docker_restart_container")
     calls = []
@@ -259,7 +261,7 @@ async def test_concurrent_developer_and_operator_decisions_execute_once(develope
     monkeypatch.setattr(approvals, "_dispatch_tool", dispatch)
     responses = await asyncio.gather(*[
         client.post(f"/api/v1/approvals/{approval_id}/decide", headers=auth_headers(identities, name),
-                    json={"approved": True}) for name in ("alice", "operator")
+                    json={"approved": True}) for name in ("alice", "admin")
     ])
     assert sorted(response.status_code for response in responses) == [200, 409]
     assert len(calls) == 1

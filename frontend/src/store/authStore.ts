@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { IS_AUTH_DISABLED, LOCAL_USER } from "@/config/runtime";
 import { authService } from "@/services/api";
-import type { User, UserRole } from "@/types";
+import type { User } from "@/types";
 
 interface AuthState {
   user: User | null;
@@ -9,12 +9,7 @@ interface AuthState {
   isLoading: boolean;
   checkAuth: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
-  signup: (
-    email: string,
-    username: string,
-    password: string,
-    role: Extract<UserRole, "developer" | "viewer">,
-  ) => Promise<void>;
+  signup: (email: string, username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   markUnauthenticated: () => void;
 }
@@ -53,7 +48,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
-  signup: async (email, username, password, role) => {
+  signup: async (email, username, password) => {
     if (IS_AUTH_DISABLED) {
       set({ user: LOCAL_USER, isAuthenticated: true, isLoading: false });
       return;
@@ -64,7 +59,6 @@ export const useAuthStore = create<AuthState>((set) => ({
         email,
         username,
         password,
-        role,
       });
       set({ user, isAuthenticated: true, isLoading: false });
     } catch (error) {

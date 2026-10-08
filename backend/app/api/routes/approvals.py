@@ -7,7 +7,7 @@ Flow
 2. Record lands in `approval_requests` table with status="pending".
 3. A reviewer polls GET /api/v1/approvals/ to see permitted pending items.
 4. A reviewer calls POST /api/v1/approvals/{id}/decide with approved=true|false.
-   Developers review their own authorized work; operators/admins review shared work.
+   Developers review their own authorized work; admins review shared work.
 5. If approved, we execute the tool and log an Execution record.
    If rejected, we mark the request "rejected" and log a cancelled Execution.
 """
@@ -142,7 +142,7 @@ async def list_pending_approvals(
 ):
     """List approval requests (default: pending only)."""
     stmt = select(ApprovalRequest).order_by(ApprovalRequest.created_at.desc())
-    # Operators still need the shared queue to perform authorized reviews.
+    # Admins still need the shared queue to perform authorized reviews.
     # Personal dashboards request "mine"; members without shared review permission
     # can only read their own requests even if they explicitly request "all".
     if scope == "mine" or not can_review_shared_approvals(current_user):
@@ -182,7 +182,7 @@ async def decide_approval(
 ):
     """
     Approve or reject a pending HITL approval request.
-    Operators/admins review shared work; developers decide only their own work
+    Admins review shared work; developers decide only their own work
     and can approve only tools authorized for their role.
 
     On approval  → the tool is executed immediately and an Execution record is created.
@@ -199,10 +199,10 @@ async def decide_approval(
         raise HTTPException(status_code=403, detail="Only an administrator can decide account status changes.")
 
     if not can_decide_approval(current_user, record, approved=decision.approved):
-        raise HTTPException(status_code=403, detail="This action requires review by an operator or administrator.")
+        raise HTTPException(status_code=403, detail="This action requires review by an administrator.")
 
     # Serialize decisions before checking status, including simultaneous
-    # reviews by the developer and an operator/admin. SQLite has no row locks;
+    # reviews by the developer and an admin. SQLite has no row locks;
     # a no-op write acquires its transaction lock.
     if db.get_bind().dialect.name == "sqlite":
         await db.execute(

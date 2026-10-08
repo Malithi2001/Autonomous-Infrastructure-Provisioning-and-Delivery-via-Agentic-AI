@@ -26,44 +26,29 @@ DESKTOP_USER_USERNAME = "desktop_user"
 
 
 class UserRole(str, Enum):
-    VIEWER = "viewer"
     DEVELOPER = "developer"
-    OPERATOR = "operator"
     ADMIN = "admin"
 
 
 ROLE_LABELS: dict[UserRole, str] = {
     UserRole.ADMIN: "Admin",
-    UserRole.OPERATOR: "Operator",
     UserRole.DEVELOPER: "Developer",
-    UserRole.VIEWER: "Viewer",
 }
 
 ROLE_DESCRIPTIONS: dict[UserRole, str] = {
     UserRole.ADMIN: (
         "Full platform owner. Can manage users, audit activity, approve changes, and use all agent tools."
     ),
-    UserRole.OPERATOR: (
-        "Operations controller. Can use production-safe operational tools and decide approval gates."
-    ),
     UserRole.DEVELOPER: (
         "Can build CI/CD workflows, review their own approval requests, and use development/staging tools."
     ),
-    UserRole.VIEWER: (
-        "Read-only observer. Can use safe AI chat and track their own activity and approval requests."
-    ),
 }
 
-# Public self-signup is intentionally limited. Privileged accounts must be
-# created by an admin so users cannot self-grant operational access.
-PUBLIC_SIGNUP_ROLES: set[UserRole] = {UserRole.DEVELOPER, UserRole.VIEWER}
+# Public signup creates developers only. The initial admin is bootstrapped;
+# neither registration nor member provisioning can grant administrator access.
+PUBLIC_SIGNUP_ROLES: set[UserRole] = {UserRole.DEVELOPER}
 
 ROLE_PERMISSIONS: dict[UserRole, list[str]] = {
-    UserRole.VIEWER: [
-        "agent:chat",
-        "approvals:read",
-        "executions:read",
-    ],
     UserRole.DEVELOPER: [
         "agent:chat",
         "approvals:read",
@@ -79,45 +64,25 @@ ROLE_PERMISSIONS: dict[UserRole, list[str]] = {
         "logs:read",
         "deployments:staging",
     ],
-    UserRole.OPERATOR: [
-        "agent:chat",
-        "agents:orchestrate",
-        "cicd:read",
-        "cicd:generate",
-        "failures:predict",
-        "repositories:read",
-        "repositories:write",
-        "workflow_failures:read",
-        "workflow_failures:write",
-        "audit:read",
-        "logs:read",
-        "logs:write",
-        "metrics:read",
-        "executions:read",
-        "executions:write",
-        "approvals:read",
-        "approvals:decide",
-        "deployments:staging",
-        "deployments:production",
-        "infrastructure:read",
-        "infrastructure:write",
-    ],
     UserRole.ADMIN: ["*"],
 }
 
 
 def coerce_role(value: str | UserRole | None) -> UserRole:
-    """Return a safe UserRole, defaulting to viewer for unknown values."""
+    """Reject missing, retired, or unknown roles instead of granting access."""
     if isinstance(value, UserRole):
         return value
     try:
-        return UserRole(str(value or UserRole.VIEWER.value).lower())
+        return UserRole(str(value or "").lower())
     except ValueError:
-        return UserRole.VIEWER
+        raise HTTPException(status_code=401, detail="Account role is no longer supported. Sign in again.")
 
 
 def get_role_permissions(role: str | UserRole | None) -> list[str]:
-    role_value = coerce_role(role)
+    try:
+        role_value = coerce_role(role)
+    except HTTPException:
+        return []
     permissions = ROLE_PERMISSIONS.get(role_value, [])
     if "*" in permissions:
         return ["*"]
@@ -125,7 +90,7 @@ def get_role_permissions(role: str | UserRole | None) -> list[str]:
 
 
 def has_permission(role: str | UserRole | None, permission: str) -> bool:
-    perms = ROLE_PERMISSIONS.get(coerce_role(role), [])
+    perms = get_role_permissions(role)
     return "*" in perms or permission in perms
 
 

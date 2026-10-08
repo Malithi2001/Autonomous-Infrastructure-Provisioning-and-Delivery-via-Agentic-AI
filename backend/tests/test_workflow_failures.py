@@ -158,7 +158,7 @@ async def test_create_fix_pr_endpoint_returns_service_result(monkeypatch, client
 
     async def _fake_create_fix_pr_for_failure(db, failure_id, current_user):
         assert failure_id == record.id
-        assert current_user["role"] == "operator"
+        assert current_user["role"] == "admin"
         return {
             "workflow_failure_id": record.id,
             "repo_full_name": "octo-org/demo-app",
@@ -172,7 +172,7 @@ async def test_create_fix_pr_endpoint_returns_service_result(monkeypatch, client
 
     monkeypatch.setattr(workflow_failures, "create_fix_pr_for_failure", _fake_create_fix_pr_for_failure)
 
-    response = client.post(f"/api/v1/workflow-failures/{record.id}/create-fix-pr", headers=_auth_headers("operator"))
+    response = client.post(f"/api/v1/workflow-failures/{record.id}/create-fix-pr", headers=_auth_headers("admin"))
 
     assert response.status_code == 200
     body = response.json()
@@ -205,7 +205,7 @@ async def test_create_fix_pr_endpoint_creates_approval_for_medium_risk(
         status="diagnosed",
     )
 
-    response = client.post(f"/api/v1/workflow-failures/{record.id}/create-fix-pr", headers=_auth_headers("operator"))
+    response = client.post(f"/api/v1/workflow-failures/{record.id}/create-fix-pr", headers=_auth_headers("admin"))
 
     assert response.status_code == 200
     body = response.json()

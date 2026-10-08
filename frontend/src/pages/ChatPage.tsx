@@ -192,11 +192,7 @@ export default function ChatPage() {
                 </span>
               </div>
               <p className="mt-1 text-xs text-ink-subtle">
-                {role.role === "viewer"
-                  ? "Read-only AI insight for operational awareness"
-                  : role.role === "operator"
-                    ? "Operational AI workspace with approval-gated production actions"
-                    : role.role === "admin"
+                {role.role === "admin"
                       ? "Full AI control plane with user and approval governance"
                       : "Developer AI workspace for diagnostics and staging workflows"}
               </p>

@@ -28,7 +28,7 @@ async def auth_client(monkeypatch):
         db.add(User(
             email="cookie-test@example.com", username="cookie-test",
             hashed_password=hash_password("cookie-test-password"),
-            role=UserRole.VIEWER, is_active=True,
+            role=UserRole.DEVELOPER, is_active=True,
         ))
         await db.commit()
 

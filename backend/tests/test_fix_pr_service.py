@@ -115,7 +115,7 @@ async def test_create_fix_pr_for_npm_missing_test_script(monkeypatch, db_session
     result = await fix_pr_service.create_fix_pr_for_failure(
         db_session,
         failure.id,
-        {"username": "operator", "role": "operator"},
+        {"username": "admin", "role": "admin"},
     )
 
     assert result["status"] == "fix_pr_created"
@@ -129,7 +129,7 @@ async def test_create_fix_pr_for_npm_missing_test_script(monkeypatch, db_session
     audit_result = await db_session.execute(select(Execution).where(Execution.tool_name == "github_create_fix_pr"))
     audit = audit_result.scalar_one()
     assert audit.status == "completed"
-    assert audit.requested_by == "operator"
+    assert audit.requested_by == "admin"
     assert json.loads(audit.details)["result"]["status"] == "fix_pr_created"
 
 
@@ -209,7 +209,7 @@ async def test_create_fix_pr_uses_installation_token_when_installed(monkeypatch,
     result = await fix_pr_service.create_fix_pr_for_failure(
         db_session,
         failure.id,
-        {"username": "operator", "role": "operator"},
+        {"username": "admin", "role": "admin"},
     )
 
     assert result["status"] == "fix_pr_created"

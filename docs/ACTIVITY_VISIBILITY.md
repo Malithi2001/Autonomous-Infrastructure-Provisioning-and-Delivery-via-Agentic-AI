@@ -8,9 +8,7 @@ Both `/api/v1/audit` and `/api/v1/executions` enforce ownership in the backend:
 
 | Role | Audit list and details | Dashboard | Approval requests |
 | --- | --- | --- | --- |
-| Viewer | Own actions | Personal | Own requests, read only |
 | Developer | Own actions | Personal | Review and decide own authorized work |
-| Operator | Own actions | Personal | Shared queue for authorized review |
 | Admin | All actors, including system actions | Shared operations | All requests |
 
 Members cannot broaden their audit access with the `actor` query parameter.
@@ -24,10 +22,10 @@ without either identity is rejected; their query is never left unfiltered.
 System and webhook records remain visible to admins rather than being assigned
 to an arbitrary member.
 
-Personal dashboards request `/approvals?scope=mine`. Viewers and developers are
+Personal dashboards request `/approvals?scope=mine`. Developers are
 restricted to their own requests even when requesting `scope=all`. Developers
 have `approvals:decide:own`, which permits approving or rejecting their own work
-without granting access to the shared queue. Operators and admins retain the
+without granting access to the shared queue. Admins retain the
 shared queue and existing approval gates.
 
 Developers can generate workflow YAML, scan repositories, and request workflow
@@ -38,7 +36,7 @@ own workflow PRs, safe workflow fix PRs, and existing development/staging
 container restart requests. Shell commands, elevated Docker operations,
 workflow dispatch, and account administration retain their privileged review
 requirements. Developers may reject their own operational requests that need
-an operator/admin to approve; account administration remains admin-only.
+an admin to approve; account administration remains admin-only.
 
 Both approval list and detail responses include `can_approve` and `can_reject`
 for the authenticated reviewer. The frontend uses these capabilities to display

@@ -207,7 +207,7 @@ class TestHITLApprovalFlow:
         assert resp.status_code in (401, 403)
 
     def test_list_pending_endpoint_returns_200(self, client: TestClient):
-        resp = client.get("/api/v1/approvals/", headers=_auth("viewer"))
+        resp = client.get("/api/v1/approvals/", headers=_auth("developer"))
         assert resp.status_code == 200
         assert isinstance(resp.json(), list)
 
@@ -246,7 +246,7 @@ class TestHITLApprovalFlow:
             response = client.post(
                 "/api/v1/agent/chat",
                 json={"message": "deploy production"},
-                headers=_auth("operator"),
+                headers=_auth("admin"),
             )
 
         assert response.status_code == 200
@@ -255,7 +255,7 @@ class TestHITLApprovalFlow:
         assert body["approval_id"]
         assert "Approval required" in body["output"]
 
-        approvals_response = client.get("/api/v1/approvals/", headers=_auth("operator"))
+        approvals_response = client.get("/api/v1/approvals/", headers=_auth("admin"))
         assert approvals_response.status_code == 200
         approvals = approvals_response.json()
         assert any(item["id"] == body["approval_id"] and item["status"] == "pending" for item in approvals)
@@ -537,7 +537,7 @@ class TestExecutionAuditTrail:
         assert "nginx" in row.summary
 
     def test_executions_endpoint_returns_list(self, client: TestClient):
-        resp = client.get("/api/v1/executions/", headers=_auth("viewer"))
+        resp = client.get("/api/v1/executions/", headers=_auth("developer"))
         assert resp.status_code == 200
         assert isinstance(resp.json(), list)
 
@@ -547,7 +547,7 @@ class TestExecutionAuditTrail:
 
     def test_single_execution_404_for_unknown(self, client: TestClient):
         fake_id = str(uuid.uuid4())
-        resp = client.get(f"/api/v1/executions/{fake_id}", headers=_auth("viewer"))
+        resp = client.get(f"/api/v1/executions/{fake_id}", headers=_auth("developer"))
         assert resp.status_code == 404
 
     def test_chat_creates_execution_record(self, client: TestClient):

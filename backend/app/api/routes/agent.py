@@ -329,7 +329,7 @@ async def agent_ws(
             if "user_version" in payload:
                 async with AsyncSessionLocal() as db:
                     payload = await validate_account_payload(payload, db)
-            user_role = payload.get("role", "developer")
+            user_role = payload.get("role")
             if not has_permission(user_role, "agent:chat"):
                 await websocket.close(code=4003, reason="Agent chat permission required")
                 return

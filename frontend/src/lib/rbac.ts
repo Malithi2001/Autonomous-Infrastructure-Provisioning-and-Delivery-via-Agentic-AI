@@ -10,12 +10,7 @@ export interface RoleDefinition {
   accentClass: string;
 }
 
-export const ROLE_ORDER: UserRole[] = [
-  "admin",
-  "operator",
-  "developer",
-  "viewer",
-];
+export const ROLE_ORDER: UserRole[] = ["admin", "developer"];
 
 export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
   admin: {
@@ -28,39 +23,6 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
     badgeClass:
       "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-200",
     accentClass: "text-rose-600 dark:text-rose-300",
-  },
-  operator: {
-    role: "operator",
-    label: "Operator",
-    description:
-      "Operations controller for production-safe tools, approval gates, logs, metrics, and executions.",
-    headline: "Production operations and approvals",
-    permissions: [
-      "agent:chat",
-      "agents:orchestrate",
-      "cicd:read",
-      "cicd:generate",
-      "failures:predict",
-      "repositories:read",
-      "repositories:write",
-      "workflow_failures:read",
-      "workflow_failures:write",
-      "audit:read",
-      "logs:read",
-      "logs:write",
-      "metrics:read",
-      "executions:read",
-      "executions:write",
-      "approvals:read",
-      "approvals:decide",
-      "deployments:staging",
-      "deployments:production",
-      "infrastructure:read",
-      "infrastructure:write",
-    ],
-    badgeClass:
-      "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-200",
-    accentClass: "text-amber-600 dark:text-amber-300",
   },
   developer: {
     role: "developer",
@@ -87,77 +49,35 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-200",
     accentClass: "text-sky-600 dark:text-sky-300",
   },
-  viewer: {
-    role: "viewer",
-    label: "Viewer",
-    description:
-      "Read-only observer for safe AI chat, personal activity, and the status of their own approval requests.",
-    headline: "Read-only operational insight",
-    permissions: ["agent:chat", "approvals:read", "executions:read"],
-    badgeClass:
-      "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200",
-    accentClass: "text-emerald-600 dark:text-emerald-300",
-  },
-};
-
-export const DEMO_CREDENTIALS: Record<
-  UserRole,
-  { email: string; password: string; note: string }
-> = {
-  admin: {
-    email: "admin@example.com",
-    password: "admin123",
-    note: "Manage users, roles, and all agent workflows.",
-  },
-  operator: {
-    email: "operator@devops.example.com",
-    password: "operator123",
-    note: "Approve high-risk actions and operate production workflows.",
-  },
-  developer: {
-    email: "devops.engineer@example.com",
-    password: "developer123",
-    note: "Build CI/CD workflows and review your own approval requests.",
-  },
-  viewer: {
-    email: "viewer@company.example.com",
-    password: "viewer123",
-    note: "Use safe AI chat without operational control-plane access.",
-  },
 };
 
 export const CHAT_SUGGESTIONS: Record<UserRole, string[]> = {
   admin: [
     "Show pending approvals and recent failed executions.",
     "Summarize infrastructure risks from the latest activity.",
-    "Create an operator checklist for today.",
-  ],
-  operator: [
-    "Show production deployment risks before approval.",
-    "Summarize failed executions from the last day.",
-    "Check service health and suggest next actions.",
+    "Create a delivery checklist for today.",
   ],
   developer: [
     "Diagnose the latest CI failure logs.",
     "Suggest a staging deployment plan.",
     "Explain recent execution failures.",
   ],
-  viewer: [
-    "Explain what this DevOps assistant can help with.",
-    "Describe CI/CD failure diagnosis in plain language.",
-    "Summarize safe DevOps best practices.",
-  ],
 };
 
 export function normalizeRole(role?: string | null): UserRole {
   const value = String(role || "").toLowerCase();
-  return ROLE_ORDER.includes(value as UserRole)
-    ? (value as UserRole)
-    : "viewer";
+  if (value === "admin" || value === "developer") return value;
+  throw new Error("Unsupported account role. Please sign in again.");
 }
 
 export function getRoleDefinition(role?: string | null): RoleDefinition {
-  return ROLE_DEFINITIONS[normalizeRole(role)];
+  if (role === "admin" || role === "developer") return ROLE_DEFINITIONS[role];
+  return {
+    ...ROLE_DEFINITIONS.developer,
+    label: "Account unavailable",
+    description: "Sign in with an active workspace account.",
+    permissions: [],
+  };
 }
 
 export function hasPermission(
@@ -177,7 +97,7 @@ export function canAccessPath(
   path: string,
 ): boolean {
   if (path.startsWith("/dashboard") || path.startsWith("/settings")) {
-    return Boolean(role);
+    return role === "admin" || role === "developer";
   }
   if (path.startsWith("/users")) return hasPermission(role, "users:manage");
   if (path.startsWith("/diagnosis"))

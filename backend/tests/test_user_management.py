@@ -31,7 +31,9 @@ async def account_app(monkeypatch, tmp_path):
         await conn.run_sync(Base.metadata.create_all)
     people = {}
     async with sessions() as db:
-        for name, role in [("admin", UserRole.ADMIN), ("member", UserRole.DEVELOPER), ("operator", UserRole.OPERATOR)]:
+        for name, role in [
+            ("admin", UserRole.ADMIN), ("member", UserRole.DEVELOPER), ("second-member", UserRole.DEVELOPER),
+        ]:
             user = User(
                 email=f"{name}@example.com", username=name,
                 hashed_password=hash_password("account-test-password"), role=role, is_active=True,
@@ -97,11 +99,11 @@ async def test_admin_cannot_create_another_administrator(account_app):
         assert len(admins) == 1 and admins[0].id == people["admin"]["id"]
         assert (await db.execute(select(User).where(User.username == "second-admin"))).scalar_one_or_none() is None
     schema = (await client.get("/openapi.json")).json()["components"]["schemas"]["AdminCreateUser"]
-    assert schema["properties"]["role"]["enum"] == ["operator", "developer", "viewer"]
+    assert schema["properties"]["role"]["const"] == "developer"
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("role", ["operator", "developer", "viewer"])
+@pytest.mark.parametrize("role", ["developer"])
 async def test_admin_can_still_create_supported_member_roles(account_app, role):
     client, sessions, people = account_app
     response = await client.post("/api/v1/auth/users", headers=headers(people["admin"]), json={
@@ -196,7 +198,7 @@ async def test_deactivation_requires_approval_and_invalidates_existing_sessions(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("role", ["member", "operator"])
+@pytest.mark.parametrize("role", ["member", "second-member"])
 async def test_only_admins_can_request_or_decide_account_changes(account_app, role):
     client, _, people = account_app
     response = await client.post(
@@ -205,7 +207,7 @@ async def test_only_admins_can_request_or_decide_account_changes(account_app, ro
     )
     assert response.status_code == 403
     approval_id = await request_change(client, people, False)
-    expected_status = 404 if role == "member" else 403
+    expected_status = 404
     assert (await decide(client, people, approval_id, role=role)).status_code == expected_status
     assert (await decide(client, people, approval_id, approved=False, role=role)).status_code == expected_status
 
@@ -328,3 +330,30 @@ async def test_deactivated_member_cannot_start_websocket_actions(account_app, mo
             with socket_client.websocket_connect("/ws/agent", headers=headers(people["member"])):
                 pass
         assert error.value.code == 4003
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["operator", "viewer"])
+async def test_retired_roles_cannot_be_created(account_app, role):
+    client, sessions, people = account_app
+    payload = {"email": "retired@example.com", "username": "retired",
+               "password": "account-test-password", "role": role}
+    for path in ("/api/v1/auth/register", "/api/v1/auth/users"):
+        response = await client.post(path, json=payload, headers=headers(people["admin"]))
+        assert response.status_code == 422
+    async with sessions() as db:
+        assert await db.scalar(select(User.id).where(User.username == "retired")) is None
+
+
+@pytest.mark.asyncio
+async def test_signup_needs_no_role_and_only_two_roles_are_advertised(account_app):
+    client, _, _ = account_app
+    roles = (await client.get("/api/v1/auth/roles")).json()
+    assert [role["role"] for role in roles["roles"]] == ["admin", "developer"]
+    assert roles["public_signup_roles"] == ["developer"]
+    response = await client.post("/api/v1/auth/register", json={
+        "email": "signup@example.com", "username": "signup", "password": "account-test-password",
+    })
+    assert response.status_code == 201
+    assert response.json()["user"]["role"] == "developer"
+    assert (await client.get("/api/v1/auth/users")).status_code == 403

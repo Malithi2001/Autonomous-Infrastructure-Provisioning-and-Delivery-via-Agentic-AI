@@ -291,7 +291,7 @@ def test_create_workflow_pr_requires_write_permission(monkeypatch):
             json={"repo_full_name": "octo-org/demo-app"},
         )
 
-    assert response.status_code == 403
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio
@@ -329,7 +329,7 @@ async def test_create_workflow_pr_returns_pr_details_and_audits(monkeypatch, db_
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/repositories/create-workflow-pr",
-            headers=_auth_headers("operator"),
+            headers=_auth_headers("admin"),
             json={
                 "repo_full_name": "octo-org/demo-app",
                 "overwrite_existing_workflow": True,
@@ -375,7 +375,7 @@ async def test_create_workflow_pr_creates_approval_when_hitl_enabled(monkeypatch
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/repositories/create-workflow-pr",
-            headers=_auth_headers("operator"),
+            headers=_auth_headers("admin"),
             json={
                 "repo_full_name": "octo-org/demo-app",
                 "overwrite_existing_workflow": True,
@@ -451,7 +451,7 @@ async def test_create_workflow_pr_uses_installation_token_when_installed(monkeyp
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/repositories/create-workflow-pr",
-            headers=_auth_headers("operator"),
+            headers=_auth_headers("admin"),
             json={"repo_full_name": "octo-org/demo-app"},
         )
 
@@ -475,7 +475,7 @@ async def test_create_workflow_pr_returns_clear_github_error_and_audits(monkeypa
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/repositories/create-workflow-pr",
-            headers=_auth_headers("operator"),
+            headers=_auth_headers("admin"),
             json={"repo_full_name": "octo-org/demo-app"},
         )
 

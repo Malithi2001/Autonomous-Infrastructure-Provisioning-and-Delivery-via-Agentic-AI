@@ -13,7 +13,7 @@ from app.main import app
 pytestmark = pytest.mark.usefixtures("isolated_app_database")
 
 
-def _auth_headers(role: str = "operator", username: str = "integration-user") -> dict[str, str]:
+def _auth_headers(role: str = "admin", username: str = "integration-user") -> dict[str, str]:
     token = create_access_token(
         {
             "sub": f"{username}-{role}",
@@ -167,7 +167,7 @@ def test_agent_orchestrate_requires_approval_for_workflow_pr(monkeypatch):
     with TestClient(app) as client:
         approvals_response = client.get(
             "/api/v1/approvals",
-            headers=_auth_headers(role="operator", username="ops"),
+            headers=_auth_headers(role="admin", username="ops"),
         )
 
     assert approvals_response.status_code == 200

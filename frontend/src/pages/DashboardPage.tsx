@@ -565,7 +565,7 @@ function DashboardContent({ user }: { user: User | null }) {
               <div>
                 <h2 className="text-sm font-semibold text-ink">
                   {can("approvals:decide")
-                    ? "Review requests as an operator"
+                    ? "Review requests as an admin"
                     : "Review your own work"}
                 </h2>
                 <p className="mt-1 text-xs text-ink-subtle">
@@ -785,7 +785,7 @@ function DashboardContent({ user }: { user: User | null }) {
             {!canReadApprovals ? (
               <Empty
                 icon={ShieldCheck}
-                title="Managed by your operators"
+                title="Managed by your admin"
                 detail="Your role cannot view the approval queue."
               />
             ) : loading ? (
