@@ -326,13 +326,17 @@ class TestPersistentMemory:
     @pytest.mark.asyncio
     async def test_delete_session_endpoint_clears_db(self, db_session: AsyncSession, client: TestClient):
         from app.services.memory_service import DBChatMessageHistory
+        from app.api.routes.agent import _scoped_chat_session
+        from app.core.security import decode_token
 
         sid = str(uuid.uuid4())
-        history = DBChatMessageHistory(session_id=sid, db=db_session)
+        auth_headers = _auth()
+        payload = decode_token(auth_headers["Authorization"].split(" ", 1)[1])
+        history = DBChatMessageHistory(session_id=_scoped_chat_session(sid, payload), db=db_session)
         await history.aadd_messages("will be deleted", "yes")
         await db_session.commit()
 
-        resp = client.delete(f"/api/v1/agent/session/{sid}", headers=_auth())
+        resp = client.delete(f"/api/v1/agent/session/{sid}", headers=auth_headers)
         assert resp.status_code == 204
 
         # Verify DB cleared (reload via same session)

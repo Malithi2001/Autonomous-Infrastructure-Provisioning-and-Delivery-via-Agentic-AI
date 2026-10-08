@@ -377,3 +377,40 @@ def test_download_workflow_logs_reports_empty_archive(monkeypatch):
 
     with pytest.raises(github_tool.GitHubToolError, match="No workflow logs"):
         github_tool.download_workflow_logs("octo-org/demo-app", 123)
+
+
+def test_list_failed_workflow_runs_reads_public_metadata_and_includes_timeouts(monkeypatch):
+    monkeypatch.setattr(github_tool.settings, "GITHUB_TOKEN", "")
+    calls = []
+
+    class Response:
+        status_code = 200
+
+        def __init__(self, conclusion):
+            self.conclusion = conclusion
+
+        def json(self):
+            return {"workflow_runs": [{"id": 1 if self.conclusion == "failure" else 2,
+                                      "conclusion": self.conclusion, "created_at": "2026-10-08T00:00:00Z"}]}
+
+    def request(url, **kwargs):
+        assert url == "https://api.github.com/repos/owner/repo/actions/runs"
+        assert "Authorization" not in kwargs["headers"]
+        calls.append(kwargs["params"]["status"])
+        return Response(kwargs["params"]["status"])
+    monkeypatch.setattr(github_tool.requests, "get", request)
+    runs = github_tool.list_failed_workflow_runs("owner/repo")
+    assert calls == ["failure", "timed_out"] and [run["id"] for run in runs] == [2, 1]
+
+
+@pytest.mark.parametrize("repo", ["owner/repo?token=x", "owner/../repo", "../repo", "owner/..", "owner/repo#frag"])
+def test_github_repository_names_reject_path_and_query_injection(repo):
+    with pytest.raises(github_tool.GitHubToolError):
+        github_tool.list_failed_workflow_runs(repo)
+
+
+def test_pasted_workflow_logs_redact_short_passwords_and_connection_strings():
+    original = "PASSWORD=short-secret\nDATABASE_URL=postgresql://someone:private@db.example/test\nMissing test script"
+    cleaned = github_tool.clean_workflow_log(original)
+    assert "short-secret" not in cleaned and "someone:private" not in cleaned
+    assert "Missing test script" in cleaned

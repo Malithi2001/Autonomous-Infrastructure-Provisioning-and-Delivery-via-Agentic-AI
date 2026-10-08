@@ -932,7 +932,7 @@ X-GitHub-Delivery: <delivery-uuid>
 
 **Method**: GET | **Path**: `/api/v1/workflow-failures`
 
-**Auth**: Required permission `executions:read`.
+**Auth**: Required permission `workflow_failures:read`.
 
 **Query Parameters**:
 
@@ -948,7 +948,7 @@ X-GitHub-Delivery: <delivery-uuid>
     "id": "failure-uuid-1",
     "repo_full_name": "owner/demo-repo",
     "workflow_name": "CI",
-    "run_id": 123456,
+    "workflow_run_id": 123456,
     "branch": "main",
     "conclusion": "failure",
     "workflow_run_url": "https://github.com/owner/demo-repo/actions/runs/123456",
@@ -970,7 +970,7 @@ X-GitHub-Delivery: <delivery-uuid>
 
 **Method**: GET | **Path**: `/api/v1/workflow-failures/{failure_id}`
 
-**Auth**: Required permission `executions:read`.
+**Auth**: Required permission `workflow_failures:read`.
 
 **Parameter**:
 - `failure_id` (UUID): Workflow failure ID.
@@ -982,7 +982,7 @@ X-GitHub-Delivery: <delivery-uuid>
   "id": "failure-uuid-1",
   "repo_full_name": "owner/demo-repo",
   "workflow_name": "CI",
-  "run_id": 123456,
+  "workflow_run_id": 123456,
   "branch": "main",
   "conclusion": "failure",
   "workflow_run_url": "https://github.com/owner/demo-repo/actions/runs/123456",
@@ -1004,11 +1004,11 @@ X-GitHub-Delivery: <delivery-uuid>
 
 ### `POST /api/v1/workflow-failures/{failure_id}/create-fix-pr`
 
-**Purpose**: Create an automated fix pull request for a diagnosed failure (requires approval if high-risk).
+**Purpose**: Create an automated fix pull request for a diagnosed failure (requires explicit human approval).
 
 **Method**: POST | **Path**: `/api/v1/workflow-failures/{failure_id}/create-fix-pr`
 
-**Auth**: Required permission `executions:write`.
+**Auth**: Required permission `repositories:write`; developers may request only their own failures.
 
 **Parameter**:
 - `failure_id` (UUID): Workflow failure ID.
@@ -1034,7 +1034,7 @@ X-GitHub-Delivery: <delivery-uuid>
 }
 ```
 
-**Response - Fix PR Created (200 OK):**
+**Execution result after approval (repository changes occur only at this stage):**
 
 ```json
 {
@@ -1042,16 +1042,27 @@ X-GitHub-Delivery: <delivery-uuid>
   "repo_full_name": "owner/demo-repo",
   "status": "fix_pr_created",
   "branch": "ai-fix/npm-test-script-20260601101530",
-  "workflow_path": "package.json",
+  "workflow_path": ".github/workflows/ci.yml",
   "pull_request_url": "https://github.com/owner/demo-repo/pull/2",
   "message": "Fix PR successfully created."
 }
 ```
 
 **Notes**:
-- Low-risk fixes are applied immediately.
-- Medium/high-risk fixes require approval when `ENABLE_HITL=true`.
-- Branch format: `ai-fix/<fix-type>-<timestamp>`.
+- All repository changes require approval, including low-risk fixes and when demo HITL settings are disabled.
+- Developers see their own imported records; admins see all records, including webhooks and legacy records.
+- Branch format: `ai-cicd/fix-<workflow_run_id>`.
+- A repeated fix request reuses its existing unexpired pending approval.
+
+---
+
+### Import and integration endpoints
+
+- `GET /api/v1/workflow-failures/integration-status` reports whether automatic log download and signed webhooks are configured. It exposes no credentials.
+- `POST /api/v1/workflow-failures/sync` accepts `{"repo_full_name":"owner/repo","limit":10}` and imports failed or timed-out runs. Public metadata works without a token. Available log-download credentials enable automatic diagnosis. Otherwise the record has `logs_unavailable` and an actionable `diagnosis_error`.
+- `POST /api/v1/workflow-failures/import` accepts `repo_full_name`, positive `workflow_run_id`, and `log_text`, with optional `workflow_name` and `branch`. It diagnoses pasted logs and saves the result under the authenticated user. Reimporting the same run updates that user's existing record.
+
+Read [Workflow Failure Guide](WORKFLOW_FAILURES.md) for the UI flow and configuration details.
 
 ---
 

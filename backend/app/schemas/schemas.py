@@ -146,6 +146,9 @@ class WorkflowFailureOut(BaseModel):
     id: uuid.UUID
     repo_full_name: str
     workflow_run_id: int
+    requested_by: Optional[str] = None
+    diagnosis_error: Optional[str] = None
+    has_pending_approval: Optional[bool] = None
     workflow_name: Optional[str] = None
     branch: Optional[str] = None
     conclusion: str
@@ -161,6 +164,32 @@ class WorkflowFailureOut(BaseModel):
     updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class WorkflowFailureSyncRequest(BaseModel):
+    repo_full_name: str = Field(min_length=3, max_length=255, pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+    limit: int = Field(default=10, ge=1, le=20)
+
+
+class WorkflowFailureImportRequest(BaseModel):
+    repo_full_name: str = Field(min_length=3, max_length=255, pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+    workflow_run_id: int = Field(gt=0, le=9223372036854775807)
+    log_text: str = Field(min_length=1, max_length=200000)
+    workflow_name: Optional[str] = Field(default=None, max_length=255)
+    branch: Optional[str] = Field(default=None, max_length=255)
+
+
+class WorkflowFailureSyncResponse(BaseModel):
+    failures: list[WorkflowFailureOut]
+    imported: int
+    diagnosed: int
+    message: str
+
+
+class WorkflowFailureIntegrationStatus(BaseModel):
+    can_download_logs: bool
+    webhook_configured: bool
+    default_repository: Optional[str] = None
 
 
 class WorkflowFailureFixPRResponse(BaseModel):

@@ -56,3 +56,15 @@ seven days, rather than claiming to be totals for all historical work.
 Regression coverage is in `backend/tests/test_audit_filtering.py`, including
 member isolation, both API aliases, actor overrides, detail access, missing
 identity, admin filtering, personal approval scope, and reviewer attribution.
+
+Workflow failures follow the same account boundary. Syncing GitHub runs or
+importing logs records `requested_by` on each saved failure. Developers list,
+read, diagnose, and request fix PRs for their own records; admins can inspect
+all records. Webhook records and older records without an owner remain admin
+visible. No caller can take another member's record by changing its ID.
+
+Chat memory uses an internal account-and-role namespace while preserving the
+public session ID. A member cannot reuse another member's session ID to load or
+clear their conversation. Local browser chat state is cleared on logout or
+account changes. Legacy unscoped conversation rows are retained, but are not
+attached to an account because their ownership cannot safely be inferred.

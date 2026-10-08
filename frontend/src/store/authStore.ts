@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { IS_AUTH_DISABLED, LOCAL_USER } from "@/config/runtime";
 import { authService } from "@/services/api";
+import { useChatStore } from "@/store/chatStore";
 import type { User } from "@/types";
 
 interface AuthState {
@@ -84,3 +85,14 @@ export const useAuthStore = create<AuthState>((set) => ({
       ? set({ user: LOCAL_USER, isAuthenticated: true, isLoading: false })
       : set({ user: null, isAuthenticated: false, isLoading: false }),
 }));
+
+// Clear local conversation state when a session ends or a different member
+// signs in on the same browser. Server memory is scoped to the account too.
+useAuthStore.subscribe((state, previous) => {
+  if (
+    state.user?.id !== previous.user?.id ||
+    state.user?.role !== previous.user?.role
+  ) {
+    useChatStore.getState().clearMessages();
+  }
+});

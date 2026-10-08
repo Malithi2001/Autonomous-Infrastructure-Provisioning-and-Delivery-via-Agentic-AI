@@ -105,6 +105,8 @@ async def ensure_schema_compatibility(conn) -> None:
                 "ADD COLUMN IF NOT EXISTS recommendation_json TEXT"
             )
         )
+        await conn.execute(text("ALTER TABLE workflow_failures ADD COLUMN IF NOT EXISTS requested_by VARCHAR(100)"))
+        await conn.execute(text("ALTER TABLE workflow_failures ADD COLUMN IF NOT EXISTS diagnosis_error TEXT"))
         return
 
     if dialect == "sqlite":
@@ -117,6 +119,10 @@ async def ensure_schema_compatibility(conn) -> None:
             await conn.execute(
                 text("ALTER TABLE workflow_failures ADD COLUMN recommendation_json TEXT")
             )
+        if "requested_by" not in columns:
+            await conn.execute(text("ALTER TABLE workflow_failures ADD COLUMN requested_by VARCHAR(100)"))
+        if "diagnosis_error" not in columns:
+            await conn.execute(text("ALTER TABLE workflow_failures ADD COLUMN diagnosis_error TEXT"))
 
 
 async def migrate_retired_roles(conn) -> None:

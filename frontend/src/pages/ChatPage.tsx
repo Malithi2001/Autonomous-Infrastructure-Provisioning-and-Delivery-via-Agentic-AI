@@ -86,8 +86,10 @@ export default function ChatPage() {
 
   const sendViaHttpFallback = useCallback(
     async (message: string, assistantId: string) => {
+      const accountId = useAuthStore.getState().user?.id;
       try {
         const res = await agentService.chat(message, sessionId ?? undefined);
+        if (useAuthStore.getState().user?.id !== accountId) return;
         if (res.session_id) setSessionId(res.session_id);
         updateMessage(assistantId, {
           content: res.output || "No response returned by the agent.",
@@ -97,14 +99,17 @@ export default function ChatPage() {
           isStreaming: false,
         });
       } catch (err: any) {
+        if (useAuthStore.getState().user?.id !== accountId) return;
         updateMessage(assistantId, {
           content: `**Request failed:** ${err.response?.data?.detail || err.message || "Something went wrong."}`,
           isStreaming: false,
           error: true,
         });
       } finally {
-        activeAssistantIdRef.current = null;
-        setLoading(false);
+        if (useAuthStore.getState().user?.id === accountId) {
+          activeAssistantIdRef.current = null;
+          setLoading(false);
+        }
       }
     },
     [sessionId, setLoading, setSessionId, updateMessage],
@@ -193,8 +198,8 @@ export default function ChatPage() {
               </div>
               <p className="mt-1 text-xs text-ink-subtle">
                 {role.role === "admin"
-                      ? "Full AI control plane with user and approval governance"
-                      : "Developer AI workspace for diagnostics and staging workflows"}
+                  ? "Full AI control plane with user and approval governance"
+                  : "Developer AI workspace for diagnostics and staging workflows"}
               </p>
             </div>
           </div>

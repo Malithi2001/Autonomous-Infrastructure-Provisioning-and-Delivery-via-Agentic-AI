@@ -191,6 +191,8 @@ class WorkflowFailure(Base):
     )
     repo_full_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     workflow_run_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    requested_by: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    diagnosis_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     workflow_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     branch: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     conclusion: Mapped[str] = mapped_column(String(50), nullable=False, default="failure", index=True)
