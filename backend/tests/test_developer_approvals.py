@@ -102,7 +102,6 @@ async def test_developer_generates_and_approves_own_workflow_pr(developer_app, m
 
     monkeypatch.setattr(repositories, "get_installation_for_repo", no_installation)
     monkeypatch.setattr(approvals, "get_installation_for_repo", no_installation)
-    monkeypatch.setattr(repositories, "create_workflow_pr", create_pr)
     monkeypatch.setattr("app.tools.github_tool.create_workflow_pr", create_pr)
     response = await client.post("/api/v1/cicd/generate-workflow", headers=auth_headers(identities),
                                  json={"files": ["package.json", "src/App.jsx"]})
@@ -268,3 +267,105 @@ async def test_concurrent_developer_and_admin_decisions_execute_once(developer_a
     async with sessions() as db:
         execution = (await db.execute(select(Execution).where(Execution.approval_id == approval_id))).scalar_one()
         assert execution.status == "completed" and execution.requested_by == "alice"
+
+
+@pytest.mark.asyncio
+async def test_workflow_pr_repeated_requests_are_deduplicated_and_private(developer_app):
+    client, sessions, identities = developer_app
+    payload = {"repo_full_name": "Example/Demo"}
+    responses = await asyncio.gather(*[
+        client.post("/api/v1/repositories/create-workflow-pr", headers=auth_headers(identities), json=payload)
+        for _ in range(4)
+    ])
+    assert all(r.status_code == 200 for r in responses)
+    assert len({r.json()["approval_id"] for r in responses}) == 1
+    own_id = responses[0].json()["approval_id"]
+    for name, code in [("alice", 200), ("admin", 200), ("bob", 404)]:
+        response = await client.get("/api/v1/repositories/workflow-pr-status", headers=auth_headers(identities, name),
+                                    params={"repo_full_name": "example/demo", "approval_id": own_id})
+        assert response.status_code == code
+        if code == 200:
+            assert response.json()["approval_id"] == own_id
+    wrong_repo = await client.get("/api/v1/repositories/workflow-pr-status", headers=auth_headers(identities, "admin"),
+                                  params={"repo_full_name": "example/other", "approval_id": own_id})
+    assert wrong_repo.status_code == 404
+    for name in ["bob", "admin"]:
+        result = await client.get("/api/v1/repositories/workflow-pr-status", headers=auth_headers(identities, name),
+                                  params={"repo_full_name": "example/demo"})
+        assert result.status_code == 200 and result.json() is None
+    async with sessions() as db:
+        rows = (await db.execute(select(ApprovalRequest))).scalars().all()
+        assert len(rows) == 1 and rows[0].id == own_id
+        rows[0].expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        await db.commit()
+    result = await client.get("/api/v1/repositories/workflow-pr-status", headers=auth_headers(identities),
+                              params={"repo_full_name": "example/demo"})
+    assert result.json()["status"] == "timed_out" and not result.json()["approval_required"]
+    renewed = await client.post(
+        "/api/v1/repositories/create-workflow-pr", headers=auth_headers(identities), json=payload,
+    )
+    assert renewed.json()["approval_id"] != own_id
+    async with sessions() as db:
+        assert (await db.get(ApprovalRequest, own_id)).status == "timed_out"
+        original = await db.scalar(select(Execution).where(Execution.approval_id == own_id))
+        assert original.status == "cancelled" and original.completed_at is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fail", [False, True])
+async def test_workflow_pr_status_exposes_execution_and_retry(developer_app, monkeypatch, fail):
+    from app.tools import github_tool
+    client, sessions, identities = developer_app
+    calls = []
+
+    def create_pr(repo, **kwargs):
+        calls.append(repo)
+        if fail:
+            raise github_tool.GitHubToolError("GitHub token is not configured.")
+        return {"repo_full_name": repo, "branch": "ai-cicd/setup-pipeline",
+                "workflow_path": ".github/workflows/ai-generated-ci.yml",
+                "pull_request_url": "https://github.com/example/demo/pull/7"}
+    monkeypatch.setattr(github_tool, "create_workflow_pr", create_pr)
+    response = await client.post("/api/v1/repositories/create-workflow-pr", headers=auth_headers(identities),
+                                 json={"repo_full_name": "example/demo"})
+    approval_id = response.json()["approval_id"]
+    assert calls == []
+    decided = await client.post(f"/api/v1/approvals/{approval_id}/decide", headers=auth_headers(identities),
+                                json={"approved": True})
+    assert decided.status_code == 200 and calls == ["example/demo"]
+    response = await client.get("/api/v1/repositories/workflow-pr-status", headers=auth_headers(identities),
+                                params={"repo_full_name": "example/demo"})
+    result = response.json()
+    assert result["status"] == ("failed" if fail else "completed")
+    assert result["execution_status"] == result["status"] and not result["approval_required"]
+    if fail:
+        assert "token is not configured" in result["message"] and not result["pull_request_url"]
+    else:
+        assert result["pull_request_url"].endswith('/pull/7')
+    async with sessions() as db:
+        requests = (await db.execute(select(Execution).where(Execution.approval_id == approval_id))).scalars().all()
+        assert len(requests) == 2 and all(r.status != "pending" for r in requests)
+    if fail:
+        retry = await client.post("/api/v1/repositories/create-workflow-pr", headers=auth_headers(identities),
+                                  json={"repo_full_name": "example/demo"})
+        assert retry.json()["approval_id"] != approval_id and calls == ["example/demo"]
+
+
+@pytest.mark.asyncio
+async def test_workflow_pr_rejection_updates_request_and_all_writes_require_approval(developer_app, monkeypatch):
+    client, sessions, identities = developer_app
+    monkeypatch.setattr(settings, "ENABLE_HITL", False)
+    response = await client.post("/api/v1/repositories/create-workflow-pr", headers=auth_headers(identities, "admin"),
+                                 json={"repo_full_name": "example/demo"})
+    assert response.json()["approval_required"]
+    approval_id = response.json()["approval_id"]
+    await client.post(f"/api/v1/approvals/{approval_id}/decide", headers=auth_headers(identities, "admin"),
+                      json={"approved": False})
+    status = await client.get("/api/v1/repositories/workflow-pr-status", headers=auth_headers(identities, "admin"),
+                              params={"repo_full_name": "example/demo"})
+    assert status.json()["status"] == "rejected" and not status.json()["pull_request_url"]
+    async with sessions() as db:
+        original = await db.scalar(select(Execution).where(
+            Execution.approval_id == approval_id, Execution.source == "api",
+        ))
+        assert original.status == "cancelled" and original.completed_at is not None

@@ -743,11 +743,9 @@ The orchestration layer routes natural language requests to specialized agents (
 
 ### `POST /api/v1/repositories/create-workflow-pr`
 
-**Purpose**: Create an AI-generated GitHub Actions workflow pull request.
+**Purpose**: Save or reuse human approval for a GitHub Actions workflow PR.
 
-**Method**: POST | **Path**: `/api/v1/repositories/create-workflow-pr`
-
-**Auth**: Required permission `executions:write`.
+**Auth**: Required permission `repositories:write`.
 
 **Request**:
 
@@ -758,7 +756,7 @@ The orchestration layer routes natural language requests to specialized agents (
 }
 ```
 
-**Response - Approval Required (200 OK, when `ENABLE_HITL=true`):**
+**Response (200 OK)**:
 
 ```json
 {
@@ -766,37 +764,49 @@ The orchestration layer routes natural language requests to specialized agents (
   "status": "approval_required",
   "approval_required": true,
   "approval_id": "550e8400-e29b-41d4-a716-446655440099",
-  "message": "Human approval is required before creating the workflow pull request."
+  "approval_status": "pending",
+  "message": "Human approval is required before sending this pull request."
 }
 ```
 
-**Response - Immediate Execution (200 OK, when `ENABLE_HITL=false`):**
+All workflow PR writes require saved human approval, regardless of `ENABLE_HITL`. Repeated submissions reuse the caller's unexpired pending review for the same repository and replacement option. After expiry, rejection, or failed execution, a new submission creates a fresh review.
+
+### `GET /api/v1/repositories/workflow-pr-status`
+
+**Purpose**: Retrieve the review and execution result after leaving or refreshing the Repositories page.
+
+**Auth**: Required permission `repositories:write`.
+
+**Query**: `repo_full_name` (required), `overwrite_existing_workflow` (default false), `approval_id` (optional UUID).
+
+Without an ID, returns the caller's latest matching review or `null`. With an ID, returns that review only if the caller owns it or is an admin; inaccessible or mismatched IDs return 404.
+
+**Completed response (200 OK)**:
 
 ```json
 {
   "repo_full_name": "owner/demo-repo",
-  "detected_stack": {
-    "language": "python",
-    "framework": "fastapi",
-    "package_manager": "pip",
-    "has_docker": true,
-    "has_existing_workflows": false,
-    "recommended_workflow": "python",
-    "project_dir": ".",
-    "detected_projects": [],
-    "ci_warnings": []
-  },
-  "branch": "ai-cicd/setup-pipeline-20260601102429",
+  "approval_id": "550e8400-e29b-41d4-a716-446655440099",
+  "approval_status": "approved",
+  "approval_required": false,
+  "status": "completed",
+  "execution_status": "completed",
+  "branch": "ai-cicd/setup-pipeline",
   "workflow_path": ".github/workflows/ai-generated-ci.yml",
   "pull_request_url": "https://github.com/owner/demo-repo/pull/1",
-  "status": "success"
+  "message": "Workflow pull request is ready for review."
 }
 ```
 
-**Notes**:
-- When `ENABLE_HITL=true`, an approval request is created and must be decided before PR creation.
-- When `ENABLE_HITL=false`, the PR is created immediately.
-- Branch name format: `ai-cicd/setup-pipeline-<timestamp>`.
+Failed results have `status: "failed"` and a sanitized error in `message`. Expired and rejected reviews have `status: "timed_out"` or `"rejected"`. Completed results also include execution ID, expiry time, and detected stack when available. Branch collisions use a timestamp plus random suffix.
+
+### `GET /api/v1/repositories/integration-status`
+
+**Auth**: Required permission `repositories:read`.
+
+Returns `{ "credentials_configured": true }` when a backend PAT or GitHub App credentials are configured. This reports configuration presence, not credential validity or repository authorization. No credential values are returned.
+
+See [Workflow PR troubleshooting](PULL_REQUEST_TROUBLESHOOTING.md) for setup, permissions, and retries.
 
 ---
 

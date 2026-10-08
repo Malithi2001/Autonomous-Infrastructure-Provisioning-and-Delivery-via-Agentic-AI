@@ -288,3 +288,7 @@ class RepositoryWorkflowPRResponse(BaseModel):
     approval_required: Optional[bool] = None
     approval_id: Optional[uuid.UUID] = None
     message: Optional[str] = None
+    approval_status: Optional[str] = None
+    expires_at: Optional[datetime] = None
+    execution_id: Optional[uuid.UUID] = None
+    execution_status: Optional[str] = None

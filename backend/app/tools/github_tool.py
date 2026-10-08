@@ -7,6 +7,7 @@ from __future__ import annotations
 import base64
 import io
 import re
+import uuid
 import zipfile
 from datetime import datetime, timezone
 from typing import Any, Mapping
@@ -687,7 +688,7 @@ def _workflow_branch_name(repository, base_name: str = WORKFLOW_BRANCH) -> str:
             return base_name
         raise
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    return f"{base_name}-{timestamp}"
+    return f"{base_name}-{timestamp}-{uuid.uuid4().hex[:8]}"
 
 
 def _create_workflow_pr_from_yaml(
@@ -709,6 +710,25 @@ def _create_workflow_pr_from_yaml(
     base_branch = repository.default_branch
     if base_branch in {"ai-cicd/setup-pipeline", WORKFLOW_BRANCH}:
         raise GitHubToolError("Default branch is not a safe PR base for generated workflow changes.")
+
+    # Check before creating a branch so a refused replacement or empty diff
+    # leaves no abandoned branch behind on repeated attempts.
+    try:
+        existing = repository.get_contents(WORKFLOW_PATH, ref=base_branch)
+    except GithubException as exc:
+        if getattr(exc, "status", None) != 404:
+            raise GitHubToolError(_github_error_message(exc, "Unable to inspect existing workflow")) from exc
+    else:
+        content = getattr(existing, "decoded_content", None)
+        if isinstance(content, bytes) and content.decode("utf-8").strip() == workflow_yaml.strip():
+            raise GitHubToolError(
+                "The generated workflow already matches the default branch. No new pull request is needed."
+            )
+        if not overwrite_existing_workflow:
+            raise GitHubToolError(
+                "The AI-generated workflow file already exists. Review and select "
+                "'Replace existing AI-generated workflow file' to request an update."
+            )
 
     branch_name = _workflow_branch_name(repository)
 

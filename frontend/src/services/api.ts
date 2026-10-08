@@ -472,6 +472,10 @@ export interface WorkflowPRResult {
   approval_required?: boolean;
   approval_id?: string;
   message?: string;
+  execution_id?: string;
+  execution_status?: string;
+  expires_at?: string;
+  approval_status?: string;
 }
 
 export interface EvaluationSummary {
@@ -494,6 +498,32 @@ export const evaluationService = {
 };
 
 export const repositoryService = {
+  integrationStatus: async (signal?: AbortSignal) => {
+    const res = await api.get<{ credentials_configured: boolean }>(
+      "/repositories/integration-status",
+      { signal },
+    );
+    return res.data;
+  },
+  workflowPrStatus: async (
+    repoFullName: string,
+    overwriteExistingWorkflow = false,
+    signal?: AbortSignal,
+    approvalId?: string | null,
+  ): Promise<WorkflowPRResult | null> => {
+    const res = await api.get<WorkflowPRResult | null>(
+      "/repositories/workflow-pr-status",
+      {
+        params: {
+          repo_full_name: repoFullName,
+          overwrite_existing_workflow: overwriteExistingWorkflow,
+          ...(approvalId ? { approval_id: approvalId } : {}),
+        },
+        signal,
+      },
+    );
+    return res.data;
+  },
   scan: async (repoFullName: string): Promise<RepositoryScanResult> => {
     const res = await api.post<RepositoryScanResult>("/repositories/scan", {
       repo_full_name: repoFullName,

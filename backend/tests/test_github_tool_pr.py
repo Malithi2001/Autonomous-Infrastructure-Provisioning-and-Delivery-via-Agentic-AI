@@ -204,8 +204,8 @@ def test_create_workflow_pr_uses_timestamp_branch_when_default_exists(fake_repo,
 
     result = github_tool.create_workflow_pr("octo-org/demo-app")
 
-    assert result["branch"] == "ai-cicd/setup-pipeline-20260531120000"
-    assert fake_repo.created_files[0]["branch"] == "ai-cicd/setup-pipeline-20260531120000"
+    assert result["branch"].startswith("ai-cicd/setup-pipeline-20260531120000-")
+    assert fake_repo.created_files[0]["branch"] == result["branch"]
 
 
 def test_create_workflow_pr_can_overwrite_existing_generated_workflow(fake_repo):
@@ -414,3 +414,27 @@ def test_pasted_workflow_logs_redact_short_passwords_and_connection_strings():
     cleaned = github_tool.clean_workflow_log(original)
     assert "short-secret" not in cleaned and "someone:private" not in cleaned
     assert "Missing test script" in cleaned
+
+
+def test_workflow_preflight_refuses_existing_file_before_branch_creation(fake_repo):
+    fake_repo.files[github_tool.WORKFLOW_PATH] = _Obj(sha="existing", decoded_content=b"name: Existing CI")
+    with pytest.raises(github_tool.GitHubToolError, match="Replace existing AI-generated workflow"):
+        github_tool.create_workflow_pr("octo-org/demo-app")
+    assert fake_repo.refs == {"main": "base-sha"}
+    assert fake_repo.created_files == fake_repo.pull_requests == []
+
+
+def test_workflow_preflight_refuses_no_changes_even_with_overwrite(fake_repo):
+    yaml = "name: Existing CI\n"
+    fake_repo.files[github_tool.WORKFLOW_PATH] = _Obj(sha="existing", decoded_content=yaml.encode())
+    with pytest.raises(github_tool.GitHubToolError, match="No new pull request is needed"):
+        github_tool.create_workflow_pr("octo-org", "demo-app", yaml, {}, overwrite_existing_workflow=True)
+    assert fake_repo.refs == {"main": "base-sha"}
+    assert fake_repo.updated_files == []
+
+
+def test_workflow_retry_branch_names_do_not_collide_in_same_second(fake_repo):
+    fake_repo.refs[github_tool.WORKFLOW_BRANCH] = "existing"
+    first = github_tool._workflow_branch_name(fake_repo)
+    second = github_tool._workflow_branch_name(fake_repo)
+    assert first != second and first.startswith(github_tool.WORKFLOW_BRANCH + "-")

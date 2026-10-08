@@ -11,10 +11,12 @@ import {
   GitPullRequest,
   Loader2,
   Radar,
+  RefreshCw,
   ShieldCheck,
 } from "lucide-react";
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { useAuthStore } from "@/store/authStore";
 
 function stackSummary(stack: RepositoryScanResult["stack"]) {
   return [
@@ -172,23 +174,90 @@ function ReadinessPanel({ result }: { result: RepositoryScanResult }) {
 }
 
 export default function RepositorySetupPage() {
-  const [repoFullName, setRepoFullName] = useState("");
+  const [params, setParams] = useSearchParams();
+  const accountId = useAuthStore((state) => state.user?.id);
+  const [repoFullName, setRepoFullName] = useState(params.get("repo") || "");
   const [scanResult, setScanResult] = useState<RepositoryScanResult | null>(
     null,
   );
   const [prResult, setPrResult] = useState<WorkflowPRResult | null>(null);
   const [scanning, setScanning] = useState(false);
   const [creatingPr, setCreatingPr] = useState(false);
-  const [overwriteWorkflow, setOverwriteWorkflow] = useState(false);
+  const [overwriteWorkflow, setOverwriteWorkflow] = useState(
+    params.get("overwrite") === "true",
+  );
   const [error, setError] = useState("");
+  const [reload, setReload] = useState(0);
+  const [gitHubConfigured, setGitHubConfigured] = useState<boolean | null>(
+    null,
+  );
 
   const normalizedRepo = repoFullName.trim();
+  const selectedApproval = params.get("approval");
+  const awaitingApproval = Boolean(prResult?.approval_required);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void repositoryService
+      .integrationStatus(controller.signal)
+      .then((data) => {
+        if (!controller.signal.aborted)
+          setGitHubConfigured(data.credentials_configured);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [accountId]);
+
+  useEffect(() => {
+    if (!/^[\w.-]+\/[\w.-]+$/.test(normalizedRepo)) return;
+    const controller = new AbortController();
+    let busy = false;
+    const refresh = async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        const result = await repositoryService.workflowPrStatus(
+          normalizedRepo,
+          overwriteWorkflow,
+          controller.signal,
+          selectedApproval,
+        );
+        if (!controller.signal.aborted) setPrResult(result);
+      } catch (err: unknown) {
+        if (!controller.signal.aborted) setError(getUserFriendlyError(err));
+      } finally {
+        busy = false;
+      }
+    };
+    const initial = window.setTimeout(refresh, 350);
+    const poll = awaitingApproval ? window.setInterval(refresh, 4000) : null;
+    window.addEventListener("focus", refresh);
+    return () => {
+      controller.abort();
+      window.clearTimeout(initial);
+      if (poll) window.clearInterval(poll);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [
+    normalizedRepo,
+    overwriteWorkflow,
+    awaitingApproval,
+    reload,
+    accountId,
+    selectedApproval,
+  ]);
 
   const scanRepository = async () => {
     if (!normalizedRepo || scanning) return;
     setScanning(true);
     setError("");
-    setPrResult(null);
+    setParams(
+      {
+        repo: normalizedRepo,
+        ...(overwriteWorkflow ? { overwrite: "true" } : {}),
+      },
+      { replace: true },
+    );
     try {
       const result = await repositoryService.scan(normalizedRepo);
       setScanResult(result);
@@ -202,6 +271,13 @@ export default function RepositorySetupPage() {
 
   const createWorkflowPr = async () => {
     if (!normalizedRepo || creatingPr) return;
+    setParams(
+      {
+        repo: normalizedRepo,
+        ...(overwriteWorkflow ? { overwrite: "true" } : {}),
+      },
+      { replace: true },
+    );
     setCreatingPr(true);
     setError("");
     try {
@@ -210,6 +286,7 @@ export default function RepositorySetupPage() {
         overwriteWorkflow,
       );
       setPrResult(result);
+      setReload((current) => current + 1);
       if (result.detected_stack) {
         setScanResult(
           (current) =>
@@ -269,7 +346,14 @@ export default function RepositorySetupPage() {
               <input
                 id="repo-full-name"
                 value={repoFullName}
-                onChange={(event) => setRepoFullName(event.target.value)}
+                onChange={(event) => {
+                  setRepoFullName(event.target.value);
+                  if (selectedApproval) setParams({}, { replace: true });
+                  setScanResult(null);
+                  setPrResult(null);
+                  setError("");
+                }}
+                disabled={scanning || creatingPr}
                 className="input-field flex-1"
                 placeholder="owner/repository"
               />
@@ -292,6 +376,16 @@ export default function RepositorySetupPage() {
               GITHUB_TOKEN or GitHub App credentials. Token values stay in the
               backend environment and are never shown here.
             </p>
+            {gitHubConfigured === false && (
+              <div
+                role="status"
+                className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-200"
+              >
+                GitHub access is not connected. Ask your admin to connect the
+                repository before scanning or sending a pull request. Approval
+                requests can still be saved for review.
+              </div>
+            )}
             {error && (
               <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200">
                 <div className="flex items-start gap-2">
@@ -319,7 +413,7 @@ export default function RepositorySetupPage() {
                 <button
                   type="button"
                   onClick={createWorkflowPr}
-                  disabled={!normalizedRepo || creatingPr}
+                  disabled={!normalizedRepo || creatingPr || awaitingApproval}
                   className="btn-primary w-full sm:w-auto"
                 >
                   {creatingPr ? (
@@ -330,17 +424,26 @@ export default function RepositorySetupPage() {
                   Create Workflow PR
                 </button>
                 <span className="text-xs text-ink-subtle">
-                  Creates a branch and opens a pull request. It does not push to
-                  main.
+                  Saves a review request. After approval, creates a branch and
+                  opens a pull request.
                 </span>
               </div>
               <label className="mt-4 flex items-start gap-3 text-sm text-ink-subtle">
                 <input
                   type="checkbox"
                   checked={overwriteWorkflow}
-                  onChange={(event) =>
-                    setOverwriteWorkflow(event.target.checked)
-                  }
+                  disabled={creatingPr}
+                  onChange={(event) => {
+                    setOverwriteWorkflow(event.target.checked);
+                    setParams(
+                      {
+                        repo: normalizedRepo,
+                        ...(event.target.checked ? { overwrite: "true" } : {}),
+                      },
+                      { replace: true },
+                    );
+                    setPrResult(null);
+                  }}
                   className="mt-1 h-4 w-4 rounded border-surface-500 bg-surface-800 text-primary-600 focus:ring-primary-500"
                 />
                 <span>
@@ -359,7 +462,9 @@ export default function RepositorySetupPage() {
                     {prResult.approval_required ||
                     prResult.status === "approval_required"
                       ? "Approval Required"
-                      : "Pull Request Created"}
+                      : prResult.pull_request_url
+                        ? "Pull Request Created"
+                        : `Request ${prResult.status || "status"}`}
                   </p>
                   <h2 className="mt-2 text-base font-semibold text-ink">
                     {prResult.repo_full_name}
@@ -386,6 +491,27 @@ export default function RepositorySetupPage() {
                       {prResult.message}
                     </p>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => setReload((current) => current + 1)}
+                    className="btn-secondary mt-3"
+                  >
+                    <RefreshCw size={14} /> Refresh PR status
+                  </button>
+                  {!prResult.approval_required &&
+                    !prResult.pull_request_url && (
+                      <button
+                        type="button"
+                        onClick={createWorkflowPr}
+                        disabled={creatingPr}
+                        className="btn-primary mt-3 ml-2"
+                      >
+                        {creatingPr && (
+                          <Loader2 size={14} className="animate-spin" />
+                        )}{" "}
+                        Request a new review
+                      </button>
+                    )}
                   {prResult.workflow_path && (
                     <p className="mt-3 text-sm text-ink-subtle">
                       Generated workflow path:{" "}

@@ -23,6 +23,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.core.database import get_db
 from app.core.logging import logger
@@ -36,6 +37,7 @@ from app.services.approval_policy_service import (
 )
 from app.services.user_management_service import apply_status_change
 from app.services.fix_pr_service import FixPRServiceError, create_fix_pr_for_failure, mark_fix_pr_rejected
+from app.tools.github_tool import clean_workflow_log
 from app.services.github_app_service import GitHubAppError, get_installation_access_token, get_installation_for_repo
 
 router = APIRouter()
@@ -232,6 +234,10 @@ async def decide_approval(
 
     if expires_at and datetime.now(tz=timezone.utc) > expires_at:
         record.status = "timed_out"
+        await db.execute(update(Execution).where(
+            Execution.approval_id == record.id, Execution.status == "pending",
+        ).values(status="cancelled", completed_at=datetime.now(timezone.utc),
+                 details=json.dumps({"error": "Approval request expired before execution."})))
         await audit_service.log_approval_decision(
             db,
             approval_id=record.id,
@@ -303,6 +309,9 @@ async def decide_approval(
             completed_at=datetime.now(tz=timezone.utc),
         )
         db.add(execution)
+        await db.execute(update(Execution).where(
+            Execution.approval_id == record.id, Execution.status == "pending",
+        ).values(status=exec_status, details=exec_details, completed_at=datetime.now(timezone.utc)))
         await audit_service.log_approval_decision(
             db,
             approval_id=record.id,
@@ -370,6 +379,9 @@ async def decide_approval(
             session_id=record.session_id,
             reason=decision.note,
         )
+        await db.execute(update(Execution).where(
+            Execution.approval_id == record.id, Execution.status == "pending",
+        ).values(status="cancelled", completed_at=now, details="Rejected before execution."))
         await db.flush()
 
         logger.info(
@@ -402,10 +414,11 @@ async def _create_workflow_pr_from_approval(
         from app.tools.github_tool import create_workflow_pr
 
         token, auth_mode, installation_id = await _github_auth_for_repo(db, repo_full_name)
-        result = create_workflow_pr(
-            repo_full_name,
+        token_kwargs: dict = {"token": token} if token else {}
+        result = await run_in_threadpool(
+            create_workflow_pr, repo_full_name,
             overwrite_existing_workflow=bool(tool_input.get("overwrite_existing_workflow")),
-            token=token,
+            **token_kwargs,
         )
         result["auth_mode"] = auth_mode
         if installation_id is not None:
@@ -420,19 +433,20 @@ async def _create_workflow_pr_from_approval(
             source="hitl",
         )
         return json.dumps(result, ensure_ascii=False, default=str), "completed"
-    except (GitHubAppError, Exception) as exc:
+    except Exception as exc:
+        error = clean_workflow_log(str(exc))
         await audit_service.log_workflow_pr_creation(
             db,
             repo_full_name=repo_full_name,
             branch="",
             pull_request_url=None,
             status="failed",
-            error=str(exc),
+            error=error,
             actor=actor,
             session_id=session_id,
             source="hitl",
         )
-        return json.dumps({"error": str(exc)}, ensure_ascii=False), "failed"
+        return json.dumps({"error": error}, ensure_ascii=False), "failed"
 
 
 async def _trigger_workflow_from_approval(

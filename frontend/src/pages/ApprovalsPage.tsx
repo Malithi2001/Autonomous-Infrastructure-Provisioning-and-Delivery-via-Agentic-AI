@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   CheckCircle,
   Clock,
+  ExternalLink,
   Loader2,
   ShieldCheck,
   XCircle,
@@ -93,6 +94,19 @@ function ApprovalsContent({ user }: { user: User | null }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [decisionMessage, setDecisionMessage] = useState("");
+  const [decisionPrUrl, setDecisionPrUrl] = useState("");
+  const [decisionRepository, setDecisionRepository] = useState("");
+
+  function parsedDetails(raw?: string): Record<string, unknown> {
+    try {
+      const value = JSON.parse(raw || "{}");
+      return value && typeof value === "object" && !Array.isArray(value)
+        ? value
+        : {};
+    } catch {
+      return {};
+    }
+  }
   const [decidingId, setDecidingId] = useState<string | null>(null);
 
   const fetchApprovals = async () => {
@@ -139,20 +153,45 @@ function ApprovalsContent({ user }: { user: User | null }) {
 
   const decide = async (approval: Approval, approved: boolean) => {
     if (decidingId || !canDecideRequest(approval, approved)) return;
+    setDecisionMessage("");
+    setDecisionPrUrl("");
+    setDecisionRepository("");
     setDecidingId(approval.id);
     setError("");
-    setDecisionMessage("");
     try {
       const result = await approvalService.decide(approval.id, approved);
+      const details = parsedDetails(result.execution_details);
+      const target = parsedDetails(approval.tool_input || approval.payload);
+      const repository = details.repo_full_name || target.repo_full_name;
+      if (
+        typeof repository === "string" &&
+        approval.tool_name === "github_create_workflow_pr"
+      ) {
+        const query = new URLSearchParams({
+          repo: repository,
+          approval: approval.id,
+        });
+        if (target.overwrite_existing_workflow === true)
+          query.set("overwrite", "true");
+        setDecisionRepository(`/repository-setup?${query}`);
+      }
+      if (
+        result.execution_status === "completed" &&
+        typeof details.pull_request_url === "string" &&
+        /^https:\/\/github\.com\//.test(details.pull_request_url)
+      )
+        setDecisionPrUrl(details.pull_request_url);
       await fetchApprovals();
       if (approved && result.execution_status === "failed") {
         setError(
-          "Approval was recorded, but execution failed. Open the audit log for details.",
+          `Approval was recorded, but execution failed. ${typeof details.error === "string" ? details.error : "Open the audit log for details."}`,
         );
       } else {
         setDecisionMessage(
           approved
-            ? "Approved. The action completed."
+            ? result.execution_status === "completed"
+              ? "Approved. The action completed."
+              : "Approval recorded. Check the audit log for the execution result."
             : "Rejected. The action was cancelled.",
         );
       }
@@ -192,6 +231,25 @@ function ApprovalsContent({ user }: { user: User | null }) {
         </div>
       </div>
       <div className="workspace-page-body min-h-0 flex-1 overflow-y-auto py-5">
+        {(decisionPrUrl || decisionRepository) && (
+          <div className="mx-auto mb-4 flex max-w-3xl flex-wrap gap-3">
+            {decisionPrUrl && (
+              <a
+                href={decisionPrUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="btn-primary"
+              >
+                Open PR <ExternalLink size={14} />
+              </a>
+            )}
+            {decisionRepository && (
+              <Link to={decisionRepository} className="btn-secondary">
+                Check repository PR status
+              </Link>
+            )}
+          </div>
+        )}
         {decisionMessage && (
           <div
             role="status"
@@ -340,8 +398,8 @@ function ApprovalsContent({ user }: { user: User | null }) {
                     canDecideRequest(a, false) &&
                     !canDecideRequest(a, true) && (
                       <p className="mb-3 text-xs text-ink-subtle">
-                        An administrator must approve this action.
-                        You can reject your request.
+                        An administrator must approve this action. You can
+                        reject your request.
                       </p>
                     )}
                   {(canDecideRequest(a, true) ||
