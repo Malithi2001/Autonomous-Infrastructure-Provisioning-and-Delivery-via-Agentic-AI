@@ -14,6 +14,11 @@ import { getUserFriendlyError } from "@/lib/errorMessages";
 import { ROLE_DEFINITIONS, ROLE_ORDER } from "@/lib/rbac";
 import type { User, UserRole } from "@/types";
 
+type MemberRole = Exclude<UserRole, "admin">;
+const memberRoles = ROLE_ORDER.filter(
+  (role): role is MemberRole => role !== "admin",
+);
+
 export function CreateUserDialog({
   open,
   onOpenChange,
@@ -26,7 +31,7 @@ export function CreateUserDialog({
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<UserRole>("developer");
+  const [role, setRole] = useState<MemberRole>("developer");
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -96,8 +101,8 @@ export function CreateUserDialog({
             Add a member
           </Dialog.Title>
           <Dialog.Description className="mt-2 text-sm leading-6 text-ink-subtle">
-            Create an account and choose the access it needs. Only
-            administrators can provision privileged roles.
+            Create an operator, developer, or viewer account and choose the
+            access it needs.
           </Dialog.Description>
           {error && (
             <div
@@ -156,10 +161,12 @@ export function CreateUserDialog({
                 <select
                   id="member-role"
                   value={role}
-                  onChange={(event) => setRole(event.target.value as UserRole)}
+                  onChange={(event) =>
+                    setRole(event.target.value as MemberRole)
+                  }
                   className="input-field px-3 py-2.5"
                 >
-                  {ROLE_ORDER.map((value) => (
+                  {memberRoles.map((value) => (
                     <option key={value} value={value}>
                       {ROLE_DEFINITIONS[value].label}
                     </option>

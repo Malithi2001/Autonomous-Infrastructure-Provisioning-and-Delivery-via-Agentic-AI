@@ -4,6 +4,12 @@ Administrators manage accounts from **Users & roles → Members & access**. The
 directory includes account totals, role and status filters, name/email search,
 member creation, and an Activate or Deactivate action for each member.
 
+The Add member form supports operator, developer, and viewer roles. Additional
+admin accounts cannot be created through the UI, the admin provisioning API,
+or public registration. The initial administrator is bootstrapped on startup
+only when no administrator exists. Changing bootstrap configuration does not
+create a second administrator. Existing administrators are retained.
+
 ## Account status changes
 
 1. Select Activate or Deactivate beside a member.

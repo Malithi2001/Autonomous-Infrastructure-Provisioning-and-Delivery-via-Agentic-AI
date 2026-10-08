@@ -179,6 +179,7 @@ def _demo_users() -> list[dict[str, Any]]:
 async def ensure_default_users(db: AsyncSession) -> tuple[list[str], list[str]]:
     """Seed default RBAC accounts into the provided session when missing."""
     from app.models.models import User
+    from app.core.security import UserRole
 
     created = []
     updated = []
@@ -200,6 +201,13 @@ async def ensure_default_users(db: AsyncSession) -> tuple[list[str], list[str]]:
                 user.email = demo["email"]
                 updated.append(demo["username"])
             continue
+
+        if demo["role"] == UserRole.ADMIN:
+            # Bootstrap the initial administrator only. A changed configured
+            # username/email must not create another admin on the next startup.
+            existing_admin = await db.scalar(select(User.id).where(User.role == UserRole.ADMIN).limit(1))
+            if existing_admin:
+                continue
 
         db.add(
             User(

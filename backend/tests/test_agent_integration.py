@@ -24,6 +24,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.core.database import Base, get_db
 from app.core.security import create_access_token
 
+pytestmark = pytest.mark.usefixtures("isolated_app_database")
+
 # ── In-memory SQLite test DB ──────────────────────────────────────────────────
 
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
@@ -490,6 +492,8 @@ class TestWebSocketStreaming:
                         raw = ws.receive_text()
                         try:
                             frame = json.loads(raw)
+                            if isinstance(frame, dict) and frame.get("event") == "error":
+                                pytest.fail("WebSocket streaming returned an error frame.", pytrace=False)
                             if isinstance(frame, dict) and frame.get("event") == "done":
                                 done_event = frame
                                 break

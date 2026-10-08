@@ -4,10 +4,13 @@ from __future__ import annotations
 import json
 import uuid
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.core.security import create_access_token
 from app.main import app
+
+pytestmark = pytest.mark.usefixtures("isolated_app_database")
 
 
 def _auth_headers(role: str = "operator", username: str = "integration-user") -> dict[str, str]:
@@ -212,7 +215,17 @@ def test_agent_websocket_streams_tokens(monkeypatch):
             websocket.send_json({"message": "Stream this reply.", "session_id": session_id})
 
             expected = "Test agent received: Stream this reply."
-            chunks = [websocket.receive_text() for _ in expected]
+            chunks = []
+            for _ in expected:
+                chunk = websocket.receive_text()
+                try:
+                    frame = json.loads(chunk)
+                except json.JSONDecodeError:
+                    chunks.append(chunk)
+                    continue
+                if isinstance(frame, dict) and "event" in frame:
+                    pytest.fail(f"Expected a text token, received WebSocket {frame['event']} event.", pytrace=False)
+                chunks.append(chunk)
             done = websocket.receive_json()
 
     assert "".join(chunks) == expected

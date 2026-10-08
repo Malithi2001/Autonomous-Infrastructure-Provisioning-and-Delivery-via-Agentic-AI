@@ -84,6 +84,73 @@ async def decide(client, people, approval_id, approved=True, role="admin"):
 
 
 @pytest.mark.asyncio
+async def test_admin_cannot_create_another_administrator(account_app):
+    client, sessions, people = account_app
+    payload = {"email": "second-admin@example.com", "username": "second-admin",
+               "password": "account-test-password", "role": "admin"}
+    response = await client.post("/api/v1/auth/users", json=payload, headers=headers(people["admin"]))
+    assert response.status_code == 422
+    response = await client.post("/api/v1/auth/register", json=payload)
+    assert response.status_code == 403
+    async with sessions() as db:
+        admins = (await db.execute(select(User).where(User.role == UserRole.ADMIN))).scalars().all()
+        assert len(admins) == 1 and admins[0].id == people["admin"]["id"]
+        assert (await db.execute(select(User).where(User.username == "second-admin"))).scalar_one_or_none() is None
+    schema = (await client.get("/openapi.json")).json()["components"]["schemas"]["AdminCreateUser"]
+    assert schema["properties"]["role"]["enum"] == ["operator", "developer", "viewer"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["operator", "developer", "viewer"])
+async def test_admin_can_still_create_supported_member_roles(account_app, role):
+    client, sessions, people = account_app
+    response = await client.post("/api/v1/auth/users", headers=headers(people["admin"]), json={
+        "email": f"new-{role}@example.com", "username": f"new-{role}",
+        "password": "account-test-password", "role": role,
+    })
+    assert response.status_code == 201 and response.json()["role"] == role
+    async with sessions() as db:
+        user = await db.get(User, response.json()["id"])
+        assert user.role.value == role and user.is_active
+
+
+@pytest.mark.asyncio
+async def test_user_creation_service_cannot_bypass_admin_role_restriction(account_app):
+    from fastapi import HTTPException
+
+    _, sessions, _ = account_app
+    async with sessions() as db:
+        with pytest.raises(HTTPException) as error:
+            await auth._create_user_record(
+                db, email="blocked-admin@example.com", username="blocked-admin",
+                password="account-test-password", role=UserRole.ADMIN,
+            )
+        assert error.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_creates_only_initial_admin_even_if_configuration_changes(isolated_app_database, monkeypatch):
+    from app.core.database import ensure_default_users
+
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "DEFAULT_ADMIN_USERNAME", "initial-admin")
+    monkeypatch.setattr(settings, "DEFAULT_ADMIN_EMAIL", "initial-admin@example.com")
+    monkeypatch.setattr(settings, "DEFAULT_ADMIN_PASSWORD", "bootstrap-test-password")
+    async with isolated_app_database() as db:
+        created, _ = await ensure_default_users(db)
+        assert created == ["initial-admin"]
+        first = (await db.execute(select(User).where(User.role == UserRole.ADMIN))).scalar_one()
+        first.is_active = False
+        await db.commit()
+        monkeypatch.setattr(settings, "DEFAULT_ADMIN_USERNAME", "changed-admin")
+        monkeypatch.setattr(settings, "DEFAULT_ADMIN_EMAIL", "changed-admin@example.com")
+        created, _ = await ensure_default_users(db)
+        assert created == []
+        admins = (await db.execute(select(User).where(User.role == UserRole.ADMIN))).scalars().all()
+        assert len(admins) == 1 and admins[0].id == first.id and admins[0].is_active is False
+
+
+@pytest.mark.asyncio
 async def test_deactivation_requires_approval_and_invalidates_existing_sessions(account_app):
     client, sessions, people = account_app
     login = await client.post("/api/v1/auth/login", json={

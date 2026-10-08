@@ -113,7 +113,7 @@ export interface AdminCreateUserRequest {
   email: string;
   username: string;
   password: string;
-  role: UserRole;
+  role: Exclude<UserRole, "admin">;
   is_active?: boolean;
 }
 

@@ -59,7 +59,9 @@ Most browser-based clients use the cookie automatically. API clients (curl, SDKs
 | `admin` | All permissions | Full system access. |
 
 - **Public sign-up**: Only `viewer` and `developer` roles.
-- **Operator/Admin creation**: Admin-only, via `POST /api/v1/auth/users`.
+- **Member creation**: Admin-only, via `POST /api/v1/auth/users`, for operator,
+  developer, and viewer roles. Creating additional admin accounts is disabled;
+  the initial admin is bootstrapped when no administrator exists.
 
 ---
 
@@ -380,6 +382,9 @@ All error responses follow this format:
 ### `POST /api/v1/auth/users`
 
 **Purpose**: Create a new user account (admin-only operation).
+
+Only `operator`, `developer`, and `viewer` roles are accepted. `admin` requests
+return HTTP 422; existing administrator accounts are preserved.
 
 **Method**: POST | **Path**: `/api/v1/auth/users`
 

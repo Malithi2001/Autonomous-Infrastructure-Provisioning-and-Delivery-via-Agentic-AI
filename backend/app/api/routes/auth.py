@@ -129,6 +129,8 @@ async def _create_user_record(
     role: UserRole,
     is_active: bool = True,
 ) -> User:
+    if role == UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Creating additional administrator accounts is disabled.")
     await _ensure_unique_user(db, email, username)
     user = User(
         email=email,
@@ -209,8 +211,8 @@ async def register(payload: UserRegister, request: Request, response: Response, 
     """
     Public self-signup.
 
-    Only viewer/developer accounts can be created publicly. Operator and admin
-    accounts are privileged and must be provisioned from an existing admin account.
+    Only viewer/developer accounts can be created publicly. Operators must be
+    provisioned by an administrator. Additional admin creation is disabled.
     """
     requested_role = coerce_role(payload.role or UserRole.DEVELOPER)
     if requested_role not in PUBLIC_SIGNUP_ROLES:
@@ -225,7 +227,7 @@ async def register(payload: UserRegister, request: Request, response: Response, 
         await db.commit()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin and operator accounts must be created by an existing admin.",
+            detail="Public sign-up supports only viewer and developer accounts.",
         )
 
     user = await _create_user_record(
@@ -436,7 +438,7 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_permission("users:manage")),
 ):
-    """Admin-only user provisioning for admin/operator/developer/viewer accounts."""
+    """Admin-only provisioning of operator/developer/viewer accounts."""
     role = coerce_role(payload.role)
     user = await _create_user_record(
         db,
