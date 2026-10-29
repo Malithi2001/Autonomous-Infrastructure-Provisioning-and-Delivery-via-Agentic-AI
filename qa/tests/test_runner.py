@@ -1,0 +1,85 @@
+"""Safety and evidence behavior of the QA harness itself."""
+import json
+import subprocess
+from pathlib import Path
+from unittest.mock import Mock
+
+import pytest
+
+from qa.run import clean_environment, sanitize_reports, write_summary
+from qa.zap.scan import scan
+
+
+def test_qa_environment_does_not_inherit_production_connections(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://synthetic.invalid/production")
+    monkeypatch.setenv("GITHUB_TOKEN", "synthetic-value-never-used")
+    monkeypatch.setenv("VITE_DISABLE_AUTH", "true")
+    env = clean_environment()
+    assert env["DATABASE_URL"] == "sqlite+aiosqlite:///:memory:"
+    assert env["GITHUB_TOKEN"] == "" and env["DISABLE_AUTH"] == "false"
+    assert "VITE_DISABLE_AUTH" not in env
+
+
+@pytest.mark.parametrize("url", [
+    "https://public.example.com", "http://192.168.1.1", "http://127.0.0.1.attacker.invalid",
+])
+def test_scanner_refuses_nonlocal_targets(url, tmp_path):
+    with pytest.raises(ValueError, match="local"):
+        scan(url, tmp_path, {})
+
+
+def test_scanner_records_unavailable_docker_as_blocked(monkeypatch, tmp_path):
+    monkeypatch.setattr(subprocess, "run", Mock(side_effect=FileNotFoundError))
+    assert scan("http://127.0.0.1:8888", tmp_path, {})["status"] == "Blocked"
+    assert not (tmp_path / "zap.json").exists()
+
+
+@pytest.mark.parametrize("code,status", [(0, "Passed"), (1, "Failed"), (2, "Warning"), (3, "Blocked")])
+def test_zap_exit_codes_remain_distinct(monkeypatch, tmp_path, code, status):
+    (tmp_path / "zap.json").write_text(json.dumps({"site": []}))
+    run = Mock(side_effect=[Mock(returncode=0), Mock(returncode=code)])
+    monkeypatch.setattr(subprocess, "run", run)
+    assert scan("http://127.0.0.1:8888", tmp_path, {})["status"] == status
+    command = run.call_args.args[0]
+    assert "zap-baseline.py" in command
+    assert "-I" not in command  # Warnings must never be ignored.
+    assert "zap-full-scan.py" not in command
+
+
+def test_summary_does_not_turn_blocked_stage_into_pass(tmp_path):
+    manifest = {"execution_date": "test-fixture", "commit_sha": "fixture-sha",
+                "source_sha256": "fixture-source", "working_tree_modified": True}
+    write_summary(tmp_path, manifest, {"zap": {"status": "Blocked", "reason": "Docker unavailable"}})
+    summary = json.loads((tmp_path / "summary.json").read_text())
+    assert summary["test_counts"] == {}
+    assert summary["stages"]["zap"]["status"] == "Blocked"
+    assert "Blocked" in (tmp_path / "summary.md").read_text()
+
+
+def test_zap_config_does_not_hide_findings():
+    config = Path(__file__).resolve().parents[1] / "zap/baseline.conf"
+    assert not any("IGNORE" in line for line in config.read_text().splitlines() if not line.startswith("#"))
+
+
+def test_report_sanitization_removes_ephemeral_passwords_and_tokens(tmp_path):
+    report = tmp_path / "selenium.html"
+    report.write_text("synthetic-password ghp_syntheticfixture eyJmaXh0dXJl.cGF5bG9hZA.c2lnbmF0dXJl")
+    sanitize_reports(tmp_path, {"QA_TEST_PASSWORD": "synthetic-password"})
+    assert report.read_text() == "[REDACTED] [REDACTED] [REDACTED]"
+
+
+def test_qa_workflow_cannot_deploy_and_always_uploads_evidence():
+    import yaml
+
+    workflow = Path(__file__).resolve().parents[2] / ".github/workflows/quality-assurance.yml"
+    config = yaml.load(workflow.read_text(), Loader=yaml.BaseLoader)
+    assert set(config["on"]) == {"pull_request", "workflow_dispatch"}
+    assert config["permissions"] == {"contents": "read"}
+    for job in config["jobs"].values():
+        assert job["timeout-minutes"]
+        uploads = [step for step in job["steps"] if step.get("uses", "").startswith("actions/upload-artifact@")]
+        assert uploads and all(step["if"] == "always()" for step in uploads)
+    text = workflow.read_text()
+    assert "continue-on-error" not in text
+    assert "secrets." not in text
+    assert "deploy.yml" not in text
