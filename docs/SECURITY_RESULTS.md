@@ -35,7 +35,8 @@ records its actual completion. Each archive includes its own tested base revisio
 source fingerprint and original/published file hashes. Both use base revision
 `c0c126f13d61f75e6564b91da5f73eabfd68a703` plus the recorded working changes.
 The only later QA code change expanded the report export allowlist and passed
-five targeted checks. Application sources were unchanged after the final suite.
+five targeted checks. Runtime application code was unchanged after the final suite; vendored font
+license line endings were normalized during final patch validation.
 A disk-full attempt before these runs failed and is not counted as passing.
 
 [Actual hosted reports and artifact links](qa-evidence/README.md) are available
