@@ -1,4 +1,8 @@
-# Local QA execution results
+# QA execution results
+
+**Current follow-up:** [completed ZAP scans, 454-test security retest, hosted
+artifacts and EC2 HTTPS status](SECURITY_RESULTS.md). The execution below is the
+initial historical run; its blocked scanner status was subsequently resolved.
 
 This document records observed local execution separately from the scenario plan
 in [QA_TESTING.md](QA_TESTING.md). Reports are the primary evidence; no blocked
@@ -7,7 +11,7 @@ scenario is represented as passing.
 Historical model metrics are stored under `backend/app/ml/reports/` and were
 generated on 2 June 2026. They are not newly measured by UI rendering tests.
 
-## Final execution: 30 October 2026
+## Initial execution: 30 October 2026
 
 The final run began at **04:58:31 Asia/Colombo**, equivalent to
 **29 October 2026, 23:28:31 UTC**. Its identifier is

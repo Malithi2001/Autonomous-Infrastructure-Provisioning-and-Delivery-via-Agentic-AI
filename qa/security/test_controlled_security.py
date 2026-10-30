@@ -135,6 +135,10 @@ def test_header_inventory(api):
     for path in ("/", "/api/v1/health", "/api/v1/auth/me", "/api/v1/audit"):
         response = client.get(base + path, timeout=5)
         assert response.status_code == 200
+        assert response.headers.get("X-Content-Type-Options") == "nosniff"
+        assert response.headers.get("X-Frame-Options") == "DENY"
+        assert "frame-ancestors 'none'" in response.headers.get("Content-Security-Policy", "")
+        assert response.headers.get("Cache-Control")
         for header, risk, remediation in [
             ("X-Content-Type-Options", "Low", "Send nosniff for API and frontend responses."),
             ("Content-Security-Policy", "Medium", "Define and verify a CSP compatible with the frontend."),
@@ -146,7 +150,7 @@ def test_header_inventory(api):
                                  "evidence": response.headers.get(header, "Header absent"),
                                  "present": header in response.headers, "remediation": remediation,
                                  "false_positive_considerations": "Reverse proxy/TLS is outside this local run.",
-                                 "remediation_implemented": False,
+                                 "remediation_implemented": header in response.headers,
                                  "source": "Controlled pytest HTTP observation; not ZAP"})
     destination = Path(os.environ["QA_REPORT_DIR"]) / "header-observations.json"
     destination.write_text(json.dumps(observations, indent=2) + "\n")

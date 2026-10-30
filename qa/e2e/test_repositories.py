@@ -50,7 +50,8 @@ def test_github_auth_error(member):
 )
 def test_workflow_pr_requires_approval(member):
     page = RepositoryPage(member.driver, member.base_url).open()
-    page.analyze("qa/demo")
+    # This fixture has no pre-existing approval; qa/demo deliberately has one.
+    page.analyze("qa/workflow-demo")
     page.text("Detected Stack")
     page.click("Create Workflow PR")
     page.text("Approval Required")

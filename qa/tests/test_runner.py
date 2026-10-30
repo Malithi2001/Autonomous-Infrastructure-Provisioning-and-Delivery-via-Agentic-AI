@@ -1,5 +1,6 @@
 """Safety and evidence behavior of the QA harness itself."""
 import json
+import os
 import subprocess
 from pathlib import Path
 from unittest.mock import Mock
@@ -59,6 +60,23 @@ def test_summary_does_not_turn_blocked_stage_into_pass(tmp_path):
 def test_zap_config_does_not_hide_findings():
     config = Path(__file__).resolve().parents[1] / "zap/baseline.conf"
     assert not any("IGNORE" in line for line in config.read_text().splitlines() if not line.startswith("#"))
+    for line in config.read_text().splitlines():
+        if line and not line.startswith("#"):
+            fields = line.split("\t")
+            assert len(fields) >= 3, "ZAP requires tab-separated rule, action and description"
+            assert fields[0].isdigit() and fields[1] in {"WARN", "FAIL", "INFO"}
+
+
+def test_docker_desktop_uses_only_the_local_gateway(monkeypatch, tmp_path):
+    monkeypatch.setattr("qa.zap.scan.platform.system", lambda: "Darwin")
+    (tmp_path / "zap.json").write_text(json.dumps({"site": []}))
+    run = Mock(side_effect=[Mock(returncode=0), Mock(returncode=0)])
+    monkeypatch.setattr(subprocess, "run", run)
+    result = scan("http://127.0.0.1:8888", tmp_path, {})
+    command = run.call_args.args[0]
+    assert command[command.index("-t") + 1] == "http://host.docker.internal:8888"
+    assert "--network" not in command
+    assert result["target"] == "http://host.docker.internal:8888"
 
 
 def test_report_sanitization_removes_ephemeral_passwords_and_tokens(tmp_path):
@@ -66,6 +84,16 @@ def test_report_sanitization_removes_ephemeral_passwords_and_tokens(tmp_path):
     report.write_text("synthetic-password ghp_syntheticfixture eyJmaXh0dXJl.cGF5bG9hZA.c2lnbmF0dXJl")
     sanitize_reports(tmp_path, {"QA_TEST_PASSWORD": "synthetic-password"})
     assert report.read_text() == "[REDACTED] [REDACTED] [REDACTED]"
+
+
+def test_report_sanitization_can_replace_read_only_scanner_reports(tmp_path):
+    report = tmp_path / "zap.md"
+    report.write_text("synthetic-password scan warning")
+    report.chmod(0o444)
+    sanitize_reports(tmp_path, {"QA_TEST_PASSWORD": "synthetic-password"})
+    assert report.read_text() == "[REDACTED] scan warning"
+    assert report.stat().st_mode & 0o200
+    assert not list(tmp_path.glob(".redacted-*"))
 
 
 def test_qa_workflow_cannot_deploy_and_always_uploads_evidence():
@@ -83,3 +111,30 @@ def test_qa_workflow_cannot_deploy_and_always_uploads_evidence():
     assert "continue-on-error" not in text
     assert "secrets." not in text
     assert "deploy.yml" not in text
+
+
+@pytest.mark.parametrize("runner_code,job_code", [(0, 0), (1, 1), (2, 2), (3, 0), (127, 127), (130, 130)])
+def test_ci_step_only_accepts_the_documented_warning_exit(tmp_path, runner_code, job_code):
+    import yaml
+
+    workflow = Path(__file__).resolve().parents[2] / ".github/workflows/quality-assurance.yml"
+    config = yaml.load(workflow.read_text(), Loader=yaml.BaseLoader)
+    step = next(step for step in config["jobs"]["browser-security"]["steps"]
+                if step.get("name", "").startswith("Execute Selenium"))
+    executable = tmp_path / "backend/venv/bin/python"
+    executable.parent.mkdir(parents=True)
+    executable.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$@" > invocation.txt\nexit "$QA_FIXTURE_EXIT"\n')
+    executable.chmod(0o755)
+    report = tmp_path / "qa/reports/latest/summary.json"
+    report.parent.mkdir(parents=True)
+    report.write_text('{"fixture": true, "zap": "Warning"}')
+    original = report.read_bytes()
+    result = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", step["run"]],
+        cwd=tmp_path, env=os.environ | {"QA_FIXTURE_EXIT": str(runner_code)},
+        capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == job_code, result.stderr
+    assert ("::warning title=ZAP baseline findings::" in result.stdout) == (runner_code == 3)
+    assert (tmp_path / "invocation.txt").read_text().splitlines() == ["-m", "qa.run", "--suite", "ui-security"]
+    assert report.read_bytes() == original

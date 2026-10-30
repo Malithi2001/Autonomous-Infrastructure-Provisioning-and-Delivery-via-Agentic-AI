@@ -1,6 +1,7 @@
 """Only qa.run may supply this scanner a verified local QA target."""
 import json
 import hashlib
+import platform
 import subprocess
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -21,10 +22,17 @@ def scan(base_url, reports, env):
         return {"status": "Blocked", "reason": "Docker is missing or unresponsive; ZAP was not executed."}
     image = "ghcr.io/zaproxy/zaproxy:stable"
     config = Path(__file__).with_name("baseline.conf").resolve()
+    # Docker Desktop's host network is opt-in. Its built-in host gateway reaches
+    # this same loopback-bound disposable app without changing Desktop settings.
+    docker_network = ["--network", "host"]
+    scan_url = base_url
+    if platform.system() == "Darwin":
+        docker_network = []
+        scan_url = f"http://host.docker.internal:{target.port}"
     container_name = "agentic-qa-zap-" + hashlib.sha256(str(reports).encode()).hexdigest()[:12]
-    command = ["docker", "run", "--rm", "--name", container_name, "--network", "host", "--user", "0:0",
+    command = ["docker", "run", "--rm", "--name", container_name, *docker_network, "--user", "0:0",
                "-v", f"{reports}:/zap/wrk:rw", "-v", f"{config}:/zap/config/baseline.conf:ro",
-               image, "zap-baseline.py", "-t", base_url, "-m", "1", "-T", "5",
+               image, "zap-baseline.py", "-t", scan_url, "-m", "1", "-T", "5",
                "-c", "/zap/config/baseline.conf", "-r", "zap.html", "-J", "zap.json",
                "-w", "zap.md"]
     with (reports / "zap.log").open("w") as log:
@@ -48,5 +56,5 @@ def scan(base_url, reports, env):
                            "false_positive_considerations": "Review endpoint context and the HTTP-only QA environment.",
                            "remediation_verified": False})
     (reports / "security-findings.json").write_text(json.dumps(alerts, indent=2) + "\n")
-    return {"status": status, "exit_code": result.returncode, "image": image,
+    return {"status": status, "exit_code": result.returncode, "image": image, "target": scan_url,
             "findings": len(alerts), "evidence": ["zap.html", "zap.json", "security-findings.json"]}

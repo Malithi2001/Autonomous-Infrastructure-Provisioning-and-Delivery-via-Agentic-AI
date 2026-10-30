@@ -41,7 +41,7 @@ def repository_inputs(repo, *args, **kwargs):
     repo = github_tool._validate_repo_full_name(repo)
     if repo == "qa/auth-error":
         raise github_tool.GitHubToolError("GitHub authentication failed for the isolated fixture.")
-    if repo != "qa/demo":
+    if repo not in {"qa/demo", "qa/workflow-demo"}:
         raise github_tool.GitHubToolError("Repository is outside the isolated QA fixture allowlist.")
     files = ["package.json", "src/App.tsx", "tests/app.test.ts", ".env.example"]
     return {"files": files, "analysis_inputs": files}

@@ -114,7 +114,19 @@ def sanitize_reports(reports, env):
                     content = content.replace(secret, "[REDACTED]")
             for pattern in patterns:
                 content = re.sub(pattern, "[REDACTED]", content)
-            path.write_text(content)
+            # Docker may create root-owned, read-only scanner reports on Linux.
+            # Replace through the runner-owned directory instead of opening the
+            # original inode for writing; the published file belongs to us.
+            replacement = None
+            try:
+                with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                                 prefix=".redacted-", delete=False) as output:
+                    replacement = Path(output.name)
+                    output.write(content)
+                replacement.replace(path)
+            finally:
+                if replacement is not None:
+                    replacement.unlink(missing_ok=True)
 
 
 def write_summary(reports, manifest, stages):
