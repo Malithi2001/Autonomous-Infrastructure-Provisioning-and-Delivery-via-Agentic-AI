@@ -85,6 +85,16 @@ def test_report_sanitization_removes_ephemeral_passwords_and_tokens(tmp_path):
     assert report.read_text() == "[REDACTED] [REDACTED] [REDACTED]"
 
 
+def test_report_sanitization_can_replace_read_only_scanner_reports(tmp_path):
+    report = tmp_path / "zap.md"
+    report.write_text("synthetic-password scan warning")
+    report.chmod(0o444)
+    sanitize_reports(tmp_path, {"QA_TEST_PASSWORD": "synthetic-password"})
+    assert report.read_text() == "[REDACTED] scan warning"
+    assert report.stat().st_mode & 0o200
+    assert not list(tmp_path.glob(".redacted-*"))
+
+
 def test_qa_workflow_cannot_deploy_and_always_uploads_evidence():
     import yaml
 
