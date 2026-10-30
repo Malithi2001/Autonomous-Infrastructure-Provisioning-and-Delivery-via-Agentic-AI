@@ -43,7 +43,7 @@ A disk-full attempt before these runs failed and is not counted as passing.
 from an executed Actions run. That earlier hosted run retained passing Selenium
 and backend reports but failed its ZAP setup; it is not represented as green.
 Tracked archives and 90-day future artifact retention address report expiry.
-The updated branch has not yet been published.
+The security follow-up branch includes these archives for pull request review.
 
 [EC2 HTTPS commands](EC2_HTTPS.md) are prepared for the operator to run inside the
 instance. Production HTTPS, SSH restriction and encrypted-volume migration remain

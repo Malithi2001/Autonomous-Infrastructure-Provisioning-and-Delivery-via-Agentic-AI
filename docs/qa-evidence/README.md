@@ -34,5 +34,5 @@ checksummed evidence exports. See [GitHub artifact access documentation](https:/
 
 Each ZIP has a same-name `.json` sidecar with archive SHA-256 and file provenance.
 [Security results and remaining findings](../SECURITY_RESULTS.md) explain the
-scope and the unverified production HTTPS status. These archives are prepared
-locally; publishing the updated branch is still pending.
+scope and the unverified production HTTPS status. These archives are committed with the security follow-up and are reviewable
+from its pull request branch, independently of Actions artifact expiry.
