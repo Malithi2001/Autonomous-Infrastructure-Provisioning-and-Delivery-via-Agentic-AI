@@ -70,7 +70,18 @@ jobs:
           google-chrome --version
           docker info --format '{{.ServerVersion}}'
       - name: Execute Selenium and controlled security with passive ZAP
-        run: backend/venv/bin/python -m qa.run --suite ui-security
+        shell: bash
+        run: |
+          qa_status=0
+          backend/venv/bin/python -m qa.run --suite ui-security || qa_status=$?
+          case "$qa_status" in
+            0) exit 0 ;;
+            3)
+              echo "::warning title=ZAP baseline findings::QA completed with passive scan warnings. Review summary.md and the uploaded ZAP reports."
+              exit 0
+              ;;
+            *) exit "$qa_status" ;;
+          esac
       - name: Publish QA status
         if: always()
         run: |

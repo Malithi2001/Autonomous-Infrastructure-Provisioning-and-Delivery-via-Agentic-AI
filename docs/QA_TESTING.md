@@ -101,6 +101,13 @@ The original ZAP exit code remains in `summary.json`: 0 success, 1 FAIL,
 2 WARN, 3 scanner/setup failure. Warnings are not suppressed or silently converted
 to passing security evidence. A missing JSON scan report is a blocker.
 
+The Actions step handles **runner** exit 3 with a visible GitHub warning annotation
+and a successful step. It preserves `Warning` in the actual reports and summary;
+success means the configured failure gate passed, not that the scan found nothing.
+Runner exit 1 (test/build/ZAP FAIL), exit 2 (blocked/setup), and every other nonzero
+exit still fail the step. In particular, ZAP's own exit 3 is a scanner setup failure
+mapped to runner exit 2; it is never accepted by this warning handling.
+
 ## Selenium architecture and scenario coverage
 
 `qa/e2e/conftest.py` owns reusable Chrome, isolated-service, account and fault

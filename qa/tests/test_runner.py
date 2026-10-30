@@ -1,5 +1,6 @@
 """Safety and evidence behavior of the QA harness itself."""
 import json
+import os
 import subprocess
 from pathlib import Path
 from unittest.mock import Mock
@@ -110,3 +111,30 @@ def test_qa_workflow_cannot_deploy_and_always_uploads_evidence():
     assert "continue-on-error" not in text
     assert "secrets." not in text
     assert "deploy.yml" not in text
+
+
+@pytest.mark.parametrize("runner_code,job_code", [(0, 0), (1, 1), (2, 2), (3, 0), (127, 127), (130, 130)])
+def test_ci_step_only_accepts_the_documented_warning_exit(tmp_path, runner_code, job_code):
+    import yaml
+
+    workflow = Path(__file__).resolve().parents[2] / ".github/workflows/quality-assurance.yml"
+    config = yaml.load(workflow.read_text(), Loader=yaml.BaseLoader)
+    step = next(step for step in config["jobs"]["browser-security"]["steps"]
+                if step.get("name", "").startswith("Execute Selenium"))
+    executable = tmp_path / "backend/venv/bin/python"
+    executable.parent.mkdir(parents=True)
+    executable.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$@" > invocation.txt\nexit "$QA_FIXTURE_EXIT"\n')
+    executable.chmod(0o755)
+    report = tmp_path / "qa/reports/latest/summary.json"
+    report.parent.mkdir(parents=True)
+    report.write_text('{"fixture": true, "zap": "Warning"}')
+    original = report.read_bytes()
+    result = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", step["run"]],
+        cwd=tmp_path, env=os.environ | {"QA_FIXTURE_EXIT": str(runner_code)},
+        capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == job_code, result.stderr
+    assert ("::warning title=ZAP baseline findings::" in result.stdout) == (runner_code == 3)
+    assert (tmp_path / "invocation.txt").read_text().splitlines() == ["-m", "qa.run", "--suite", "ui-security"]
+    assert report.read_bytes() == original
