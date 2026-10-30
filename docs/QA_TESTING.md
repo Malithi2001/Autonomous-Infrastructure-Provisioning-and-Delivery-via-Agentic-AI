@@ -85,7 +85,10 @@ export QA_CHROME_BINARY=/path/to/chrome
 Never supply real administrator credentials. Do not pass a production URL:
 the runner owns the test server and accepts no external application target.
 ZAP additionally rejects non-loopback targets. The runner supports macOS/Linux;
-use Linux/WSL for Windows CI-style execution.
+use Linux/WSL for Windows CI-style execution. On macOS, the scanner container
+uses Docker Desktop's `host.docker.internal` gateway to that same isolated
+loopback application; it never accepts a public target. ZAP rule entries use
+tab separators, as required by its packaged baseline script.
 
 | Runner exit code | Meaning |
 |---|---|
@@ -199,7 +202,14 @@ mismatches and this environment issue; it must not be used as the final pass cou
 
 Every invocation writes `qa/reports/<UTC-run-id>/`; `qa/reports/latest` points to
 the newest invocation. Evidence is intentionally Git-ignored. Preserve the entire
-run directory when submitting dissertation appendices or CI artifacts.
+run directory when submitting dissertation appendices or CI artifacts. Selected
+sanitized HTML/XML/traceability and real ZAP reports are preserved as checksummed
+archives in [qa-evidence](qa-evidence/README.md), together with a hosted Actions
+run link. Export an actual run with:
+
+```bash
+backend/venv/bin/python -m qa.export_evidence qa/reports/latest qa/published
+```
 
 | Artifact | Content |
 |---|---|
@@ -225,7 +235,7 @@ pattern-based redaction cannot identify every possible secret representation.
 
 Final local outcomes and known limitations are recorded in
 [QA_RESULTS.md](QA_RESULTS.md). That file separates executed checks, historical
-ML metrics and blocked security scanning.
+ML metrics, completed passive scans and any blocked checks.
 
 ## CI and reproducibility limitations
 
@@ -236,9 +246,11 @@ secrets. Backend tests precede the browser/security job, which still runs to
 collect evidence if backend checks fail. Upload steps run regardless of outcome.
 The QA runner performs service startup, health checks and final cleanup.
 
-The workflow file can be validated locally; an actual hosted GitHub Actions run
-requires pushing a branch/PR or manual dispatch, which this implementation does
-not perform. Local evidence is not evidence of a completed hosted run.
+Actual hosted run outcomes and artifact links are recorded in
+[qa-evidence](qa-evidence/README.md). Uploads retain the original reports and
+sanitized checksummed exports for 90 days, including failing runs. Repository
+archives provide selected evidence after artifact expiry. A hosted setup failure
+is recorded separately from completed local scans; it is never a passing scan.
 
 Top-level dependencies are pinned, but the backend's existing transitive ranges,
 installed Chrome and ZAP stable image can change. Preserve `manifest.json`, test

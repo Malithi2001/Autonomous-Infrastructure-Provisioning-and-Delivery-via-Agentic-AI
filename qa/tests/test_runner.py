@@ -59,6 +59,23 @@ def test_summary_does_not_turn_blocked_stage_into_pass(tmp_path):
 def test_zap_config_does_not_hide_findings():
     config = Path(__file__).resolve().parents[1] / "zap/baseline.conf"
     assert not any("IGNORE" in line for line in config.read_text().splitlines() if not line.startswith("#"))
+    for line in config.read_text().splitlines():
+        if line and not line.startswith("#"):
+            fields = line.split("\t")
+            assert len(fields) >= 3, "ZAP requires tab-separated rule, action and description"
+            assert fields[0].isdigit() and fields[1] in {"WARN", "FAIL", "INFO"}
+
+
+def test_docker_desktop_uses_only_the_local_gateway(monkeypatch, tmp_path):
+    monkeypatch.setattr("qa.zap.scan.platform.system", lambda: "Darwin")
+    (tmp_path / "zap.json").write_text(json.dumps({"site": []}))
+    run = Mock(side_effect=[Mock(returncode=0), Mock(returncode=0)])
+    monkeypatch.setattr(subprocess, "run", run)
+    result = scan("http://127.0.0.1:8888", tmp_path, {})
+    command = run.call_args.args[0]
+    assert command[command.index("-t") + 1] == "http://host.docker.internal:8888"
+    assert "--network" not in command
+    assert result["target"] == "http://host.docker.internal:8888"
 
 
 def test_report_sanitization_removes_ephemeral_passwords_and_tokens(tmp_path):

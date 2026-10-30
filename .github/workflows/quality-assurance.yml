@@ -39,7 +39,7 @@ jobs:
           name: qa-backend-${{ github.sha }}
           path: qa/reports/
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 90
 
   browser-security:
     name: Selenium and passive security
@@ -77,13 +77,21 @@ jobs:
           if test -f qa/reports/latest/summary.md; then
             cat qa/reports/latest/summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
+      - name: Export sanitized checksummed evidence
+        if: always()
+        run: |
+          if test -f qa/reports/latest/summary.json; then
+            backend/venv/bin/python -m qa.export_evidence qa/reports/latest qa/published
+          fi
       - name: Upload actual browser and security evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: qa-browser-security-${{ github.sha }}
-          path: qa/reports/
+          path: |
+            qa/reports/
+            qa/published/
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 90
       # qa.run terminates its owned server in finally, including test failures.
       # No deployment job, production credentials, Docker socket mount or EC2 access.

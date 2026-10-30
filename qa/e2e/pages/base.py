@@ -31,7 +31,10 @@ class Page:
         return element
 
     def button(self, label):
-        return self.wait.until(EC.element_to_be_clickable((By.XPATH, f"//button[normalize-space(.)='{label}']")))
+        locator = (By.XPATH, f"//button[normalize-space(.)='{label}']")
+        element = self.wait.until(EC.presence_of_element_located(locator))
+        self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", element)
+        return self.wait.until(EC.element_to_be_clickable(locator))
 
     def click(self, label):
         button = self.button(label)

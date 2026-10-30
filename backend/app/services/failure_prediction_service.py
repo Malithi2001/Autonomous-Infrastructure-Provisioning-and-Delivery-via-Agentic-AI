@@ -48,8 +48,8 @@ def _get_model() -> Any:
     if _model is None:
         if not MODEL_PATH.exists():
             raise FailurePredictionUnavailable(
-                "Failure prediction model not found at "
-                f"{MODEL_PATH}. Train it with `python3 app/ml/train_failure_model.py` "
+                "Failure prediction model not found. "
+                "Train it with `python3 app/ml/train_failure_model.py` "
                 "from the backend directory."
             )
         try:
